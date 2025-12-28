@@ -1,10 +1,10 @@
-use crate::types::{SGGraph, SGNode, SGNodeId, SGSymbol};
+use crate::types::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use anyhow::Result;
 
 pub trait ToDOT {
-    fn to_dot_lines(self: &mut Self) -> Vec<String>;
+    fn to_dot_lines(self: &Self) -> Vec<String>;
 
-    fn write_to_dot_file(self: &mut Self, out_path: &String) -> Result<()> {
+    fn write_to_dot_file(self: &Self, out_path: &String) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 
@@ -17,7 +17,7 @@ pub trait ToDOT {
     }
 }
 
-fn esc_dot_label(s: String) -> String {
+fn esc_dot_label(s: &String) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
@@ -50,7 +50,12 @@ fn symbol_to_str(symbol: &SGSymbol) -> String {
     }
 }
 
-fn make_node_name(ids: &Vec<SGNodeId>, id: &SGNodeId, node: &SGNode) -> String {
+fn make_node_name(
+    ids: &Vec<SGNodeId>,
+    id: &SGNodeId,
+    symbols: &Vec<SGSymbol>,
+    node: &SGNode,
+) -> String {
     match node {
         SGNode::Scope(is_exported) => {
             if *is_exported {
@@ -60,38 +65,60 @@ fn make_node_name(ids: &Vec<SGNodeId>, id: &SGNodeId, node: &SGNode) -> String {
             }
         }
         SGNode::Root => "root".to_string(),
-        SGNode::Push(symbol) => format!("push {}", symbol_to_str(&symbol)),
-        SGNode::Pop(symbol) => format!("pop {}", symbol_to_str(&symbol)),
+        SGNode::Push(symbol) => format!("push {}", symbol_to_str(&symbols[*symbol])),
+        SGNode::Pop(symbol) => format!("pop {}", symbol_to_str(&symbols[*symbol])),
         SGNode::JumpTo => "jump_to".to_string(),
         SGNode::PushScoped(symbol, scope) => format!(
             "push_scoped {} at {}",
-            symbol_to_str(&symbol),
+            symbol_to_str(&symbols[*symbol]),
             id_to_str(&ids[*scope as usize])
         ),
         SGNode::PushScopedUnresolved(symbol, scope_raw) => format!(
             "push_scoped {} at {}",
-            symbol_to_str(&symbol),
+            symbol_to_str(&symbols[*symbol]),
             id_to_str(&scope_raw)
         ),
-        SGNode::PopScoped(symbol) => format!("pop_scoped {}", symbol_to_str(&symbol)),
+        SGNode::PopScoped(symbol) => format!("pop_scoped {}", symbol_to_str(&symbols[*symbol])),
         SGNode::DropScopes => "drop_scopes".to_string(),
     }
 }
 
 impl ToDOT for SGGraph {
-    fn to_dot_lines(self: &mut Self) -> Vec<String> {
+    fn to_dot_lines(self: &Self) -> Vec<String> {
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
         dot_lines.push("  rankdir=LR;".to_string());
         dot_lines.push("  node [shape=box, fontsize=10];".to_string());
         for (i, node) in self.nodes.iter().enumerate() {
             let id = &self.ids[i];
-            let node_name = esc_dot_label(make_node_name(&self.ids, &id, &node));
+            let node_name = make_node_name(&self.ids, &id, &self.symbols, &node);
+            let node_name = esc_dot_label(&node_name);
             dot_lines.push(format!("  {} [label=\"{}\"];", i, node_name));
         }
 
         for edge in self.edges.iter() {
             dot_lines.push(format!("  {} -> {};", edge.from, edge.to));
+        }
+
+        dot_lines.push("}".to_string());
+        dot_lines
+    }
+}
+
+impl ToDOT for CFLGraph {
+    fn to_dot_lines(self: &Self) -> Vec<String> {
+        let mut dot_lines: Vec<String> = Vec::new();
+        dot_lines.push("digraph stackgraph {".to_string());
+        dot_lines.push("  rankdir=LR;".to_string());
+        dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+
+        for edge in self.edges.iter() {
+            dot_lines.push(format!(
+                "  {} -> {} [label = \"{}\"];",
+                edge.from,
+                edge.to,
+                esc_dot_label(&edge.symbol),
+            ));
         }
 
         dot_lines.push("}".to_string());

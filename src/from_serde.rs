@@ -160,8 +160,8 @@ impl FromSerde for SGGraph {
             ..Default::default()
         };
 
-        let mut nodes = Vec::<SGNode>::new();
         let src_nodes = get_array(&src_obj, "nodes")?;
+        let mut nodes = Vec::<SGNode>::with_capacity(src_nodes.len());
         for src_node in src_nodes {
             let (_, node) = node_from_serde(
                 &mut indexer,
@@ -175,8 +175,8 @@ impl FromSerde for SGGraph {
 
         resolve_push_scoped(&mut indexer, &mut nodes);
 
-        let mut edges = Vec::<SGEdge>::new();
         let src_edges = get_array(&src_obj, "edges")?;
+        let mut edges = Vec::<SGEdge>::with_capacity(src_edges.len());
         for src_edge in src_edges {
             edges.push(edge_from_serde(
                 &mut indexer,

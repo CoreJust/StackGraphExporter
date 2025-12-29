@@ -38,24 +38,29 @@ pub struct SGGraph {
     pub(crate) symbols: Vec<SGSymbol>,
 }
 
+pub type CFLSymbolIndex = usize;
+pub type CFLNodeIndex = usize;
+
 pub enum CFLSymbol {
-    Terminal(String),
-    NonTerminal(String),
+    Terminal(CFLSymbolIndex),
+    NonTerminal(CFLSymbolIndex),
 }
 
 pub struct CFLRule {
-    pub(crate) from_non_terminal: String,
+    pub(crate) from_non_terminal: CFLSymbolIndex,
     pub(crate) to: Vec<CFLSymbol>,
 }
 
+#[derive(Clone)]
 pub struct CFLEdge {
-    pub(crate) symbol: String,
-    pub(crate) from: u64,
-    pub(crate) to: u64,
+    pub(crate) symbol: Option<CFLSymbolIndex>,
+    pub(crate) from: CFLNodeIndex,
+    pub(crate) to: CFLNodeIndex,
 }
 
 pub struct CFLGraph {
     pub(crate) rules: Vec<CFLRule>,
     pub(crate) edges: Vec<CFLEdge>,
-    pub(crate) nodes_count: u64,
+    pub(crate) symbols: Vec<String>,
+    pub(crate) nodes_count: usize,
 }

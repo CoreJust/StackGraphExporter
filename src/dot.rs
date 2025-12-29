@@ -10,7 +10,7 @@ pub trait ToDOT {
 
         let mut out_file = File::create(&out_path)?;
 
-        for line in self.to_dot_lines() {
+        for line in self.to_dot_lines().into_iter() {
             writeln!(out_file, "{}", line)?;
         }
         Ok(())
@@ -96,7 +96,7 @@ impl ToDOT for SGGraph {
             dot_lines.push(format!("  {} [label=\"{}\"];", i, node_name));
         }
 
-        for edge in self.edges.iter() {
+        for edge in &self.edges {
             dot_lines.push(format!("  {} -> {};", edge.from, edge.to));
         }
 
@@ -112,16 +112,35 @@ impl ToDOT for CFLGraph {
         dot_lines.push("  rankdir=LR;".to_string());
         dot_lines.push("  node [shape=box, fontsize=10];".to_string());
 
-        for edge in self.edges.iter() {
-            dot_lines.push(format!(
-                "  {} -> {} [label = \"{}\"];",
-                edge.from,
-                edge.to,
-                esc_dot_label(&edge.symbol),
-            ));
+        for edge in &self.edges {
+            let label = edge
+                .symbol
+                .and_then(|s| {
+                    Some(format!(
+                        " [label = \"{}\"]",
+                        esc_dot_label(&self.symbols[s])
+                    ))
+                })
+                .unwrap_or("".to_string());
+            dot_lines.push(format!("  {} -> {}{};", edge.from, edge.to, label,));
         }
 
         dot_lines.push("}".to_string());
+        for rule in &self.rules {
+            dot_lines.push(format!(
+                "// {} := {}",
+                &self.symbols[rule.from_non_terminal],
+                rule.to
+                    .iter()
+                    .map(|s| self.symbols[match s {
+                        crate::types::CFLSymbol::Terminal(i) => *i,
+                        crate::types::CFLSymbol::NonTerminal(i) => *i,
+                    }]
+                    .clone())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+        }
         dot_lines
     }
 }

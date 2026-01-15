@@ -1,8 +1,8 @@
 use crate::{
     cfl_simplifier::simplify_graph,
     types::{
-        CFLEdge, CFLGraph, CFLNodeIndex, CFLRule, CFLSymbol, SGEdge, SGGraph, SGNode, SGNodeIndex,
-        SGSymbol, SGSymbolIndex,
+        CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLPath, CFLRule, CFLSymbol, SGEdge,
+        SGGraph, SGNode, SGNodeIndex, SGSymbol, SGSymbolIndex,
     },
 };
 use anyhow::Result;
@@ -38,6 +38,31 @@ fn generate_out_ids(src_nodes: &Vec<SGNode>) -> HashMap<SGNodeIndex, CFLNodeInde
     out_ids
 }
 
+fn generate_node_metadata(
+    symbols: &Vec<SGSymbol>,
+    src_nodes: &Vec<SGNode>,
+    out_ids: &HashMap<SGNodeIndex, CFLNodeIndex>,
+) -> HashMap<CFLNodeIndex, CFLNodeMetadata> {
+    let mut metadatas = HashMap::<CFLNodeIndex, CFLNodeMetadata>::with_capacity(out_ids.len());
+    for (from, to) in out_ids {
+        let node = &src_nodes[*from];
+        let symbol_index = get_symbol_of(node).unwrap();
+        let symbol = &symbols[symbol_index];
+        let metadata = CFLNodeMetadata {
+            name: symbol.name.clone(),
+            is_real: symbol.real,
+            file: symbol.file,
+            line: symbol.line,
+        };
+        if is_push_node(node) {
+            metadatas.insert(*from, metadata);
+        } else {
+            metadatas.insert(*to, metadata);
+        }
+    }
+    metadatas
+}
+
 fn generate_for_current_edges(
     src_edges: &Vec<SGEdge>,
     src_nodes: &Vec<SGNode>,
@@ -71,7 +96,7 @@ fn generate_symbol_edges(
     for (in_id, out_id) in out_ids.iter() {
         if let Some(id) = get_symbol_of(&nodes[*in_id]) {
             edges.push(CFLEdge {
-                symbol: Some(3 * id + if is_push_node(&nodes[*in_id]) { 0 } else { 1 }),
+                symbol: Some(2 * id + if is_push_node(&nodes[*in_id]) { 0 } else { 1 }),
                 from: *in_id,
                 to: *out_id,
             });
@@ -79,34 +104,24 @@ fn generate_symbol_edges(
     }
 }
 
-fn generate_edges(sggraph: &SGGraph) -> (Vec<CFLEdge>, usize) {
+fn generate_edges(sggraph: &SGGraph) -> (Vec<CFLEdge>, HashMap<SGNodeIndex, CFLNodeIndex>) {
     let mut out_ids = generate_out_ids(&sggraph.nodes); // IDs for future out_symbol nodes
     let mut edges = generate_for_current_edges(&sggraph.edges, &sggraph.nodes, &mut out_ids);
     generate_symbol_edges(&mut edges, &sggraph.nodes, &out_ids);
-    (edges, sggraph.nodes.len() + out_ids.len())
+    (edges, out_ids)
 }
 
 fn generate_symbols_rules(symbols: &Vec<SGSymbol>) -> (Vec<String>, Vec<CFLRule>) {
-    let mut rules = Vec::<CFLRule>::with_capacity(2 + 3 * symbols.len());
-    let mut cfl_symbols = Vec::<String>::with_capacity(1 + 3 * symbols.len());
-    let s_non_terminal = 3 * symbols.len();
+    let mut rules = Vec::<CFLRule>::with_capacity(2 + symbols.len());
+    let mut cfl_symbols = Vec::<String>::with_capacity(1 + 2 * symbols.len());
+    let s_non_terminal = 2 * symbols.len();
     for symbol in symbols {
         let id = cfl_symbols.len();
         cfl_symbols.push(format!("push_{}", symbol.name));
         cfl_symbols.push(format!("pop_{}", symbol.name));
-        cfl_symbols.push(format!("query_{}", symbol.name));
         // S := push_X S pop_X
         rules.push(CFLRule {
             from_non_terminal: s_non_terminal,
-            to: vec![
-                CFLSymbol::Terminal(id),
-                CFLSymbol::NonTerminal(s_non_terminal),
-                CFLSymbol::Terminal(id + 1),
-            ],
-        });
-        // query_X := push_X S pop_X
-        rules.push(CFLRule {
-            from_non_terminal: id + 2,
             to: vec![
                 CFLSymbol::Terminal(id),
                 CFLSymbol::NonTerminal(s_non_terminal),
@@ -131,16 +146,32 @@ fn generate_symbols_rules(symbols: &Vec<SGSymbol>) -> (Vec<String>, Vec<CFLRule>
     (cfl_symbols, rules)
 }
 
-pub fn convert_to_cfl(sggraph: &SGGraph, simplify: bool) -> Result<CFLGraph> {
+pub fn convert_to_cfl(sggraph: SGGraph, simplify: bool) -> Result<CFLGraph> {
     let (symbols, rules) = generate_symbols_rules(&sggraph.symbols);
-    let (mut edges, mut nodes_count) = generate_edges(sggraph);
+    let (mut edges, out_ids) = generate_edges(&sggraph);
+    let mut nodes_metadata = generate_node_metadata(&sggraph.symbols, &sggraph.nodes, &out_ids);
+    let mut paths = sggraph
+        .paths
+        .iter()
+        .map(|p| CFLPath {
+            from: p.from,
+            to: out_ids[&p.to],
+        })
+        .collect();
     if simplify {
-        simplify_graph(&mut edges, &mut nodes_count);
+        simplify_graph(
+            &mut edges,
+            &mut nodes_metadata,
+            &mut paths,
+            sggraph.nodes.len() + out_ids.len(),
+        );
     }
     return Ok(CFLGraph {
         rules,
         edges,
         symbols,
-        nodes_count,
+        metadata: nodes_metadata,
+        paths,
+        files: sggraph.files,
     });
 }

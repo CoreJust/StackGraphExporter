@@ -31,12 +31,12 @@ fn esc_dot_label(s: &String) -> String {
     out
 }
 
-fn id_to_str(id: &SGNodeId) -> String {
+fn id_to_str(id: &SGNodeId, files: &Vec<String>) -> String {
     format!(
         "{}:{}",
         id.file
             .as_ref()
-            .and_then(|x| Some(x.as_str()))
+            .and_then(|x| Some(files[*x].as_str()))
             .unwrap_or_else(|| "<global>"),
         id.local_id
     )
@@ -54,14 +54,15 @@ fn make_node_name(
     ids: &Vec<SGNodeId>,
     id: &SGNodeId,
     symbols: &Vec<SGSymbol>,
+    files: &Vec<String>,
     node: &SGNode,
 ) -> String {
     match node {
         SGNode::Scope(is_exported) => {
             if *is_exported {
-                format!("scope {} exported", id_to_str(id))
+                format!("scope {} exported", id_to_str(id, files))
             } else {
-                format!("scope {}", id_to_str(id))
+                format!("scope {}", id_to_str(id, files))
             }
         }
         SGNode::Root => "root".to_string(),
@@ -71,12 +72,12 @@ fn make_node_name(
         SGNode::PushScoped(symbol, scope) => format!(
             "push_scoped {} at {}",
             symbol_to_str(&symbols[*symbol]),
-            id_to_str(&ids[*scope as usize])
+            id_to_str(&ids[*scope as usize], files)
         ),
         SGNode::PushScopedUnresolved(symbol, scope_raw) => format!(
             "push_scoped {} at {}",
             symbol_to_str(&symbols[*symbol]),
-            id_to_str(&scope_raw)
+            id_to_str(&scope_raw, files)
         ),
         SGNode::PopScoped(symbol) => format!("pop_scoped {}", symbol_to_str(&symbols[*symbol])),
         SGNode::DropScopes => "drop_scopes".to_string(),
@@ -91,7 +92,7 @@ impl ToDOT for SGGraph {
         dot_lines.push("  node [shape=box, fontsize=10];".to_string());
         for (i, node) in self.nodes.iter().enumerate() {
             let id = &self.ids[i];
-            let node_name = make_node_name(&self.ids, &id, &self.symbols, &node);
+            let node_name = make_node_name(&self.ids, &id, &self.symbols, &self.files, &node);
             let node_name = esc_dot_label(&node_name);
             dot_lines.push(format!("  {} [label=\"{}\"];", i, node_name));
         }

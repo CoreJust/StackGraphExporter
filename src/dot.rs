@@ -110,8 +110,8 @@ impl ToDOT for CFLGraph {
     fn to_dot_lines(self: &Self) -> Vec<String> {
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
-        dot_lines.push("  rankdir=LR;".to_string());
-        dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+        //dot_lines.push("  rankdir=LR;".to_string());
+        //dot_lines.push("  node [shape=box, fontsize=10];".to_string());
 
         for edge in &self.edges {
             let label = edge
@@ -122,12 +122,12 @@ impl ToDOT for CFLGraph {
                         esc_dot_label(&self.symbols[s])
                     ))
                 })
-                .unwrap_or("".to_string());
+                .unwrap_or(" [label = \"\"]".to_string());
             dot_lines.push(format!("  {} -> {}{};", edge.from, edge.to, label,));
         }
 
         dot_lines.push("}".to_string());
-        for rule in &self.rules {
+        /*for rule in &self.rules {
             dot_lines.push(format!(
                 "// {} := {}",
                 &self.symbols[rule.from_non_terminal],
@@ -141,7 +141,7 @@ impl ToDOT for CFLGraph {
                     .collect::<Vec<_>>()
                     .join(" ")
             ));
-        }
+        }*/
         dot_lines
     }
 }

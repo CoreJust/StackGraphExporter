@@ -1028,6 +1028,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "stack-graphs",

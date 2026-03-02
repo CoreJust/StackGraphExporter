@@ -55,6 +55,7 @@ pub type CFLSymbolIndex = usize;
 pub type CFLNodeIndex = usize;
 pub type CFLFileIndex = usize;
 
+#[derive(Clone)]
 pub enum CFLSymbol {
     Terminal(CFLSymbolIndex),
     NonTerminal(CFLSymbolIndex),

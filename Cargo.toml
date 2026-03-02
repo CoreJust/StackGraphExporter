@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+regex = "1.10"
 walkdir = "2.3"
 
 tree-sitter-java = "0.23.4"

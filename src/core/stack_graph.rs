@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
-pub type SGNodeIndex = usize;
+pub type SGNodeIndex = u32;
 pub type SGSymbolIndex = usize;
 pub type SGFileIndex = usize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SGSymbol {
     pub name: String,
-    pub real: bool, // true for definition, false for reference
+    pub real: bool, // Reference of definition
     pub file: Option<SGFileIndex>,
     pub line: Option<usize>,
 }

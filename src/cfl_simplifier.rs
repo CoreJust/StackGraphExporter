@@ -21,11 +21,11 @@ fn collect_nodes_info(edges: &Vec<CFLEdge>, nodes_count: usize) -> Vec<NodeInfo>
         })
         .collect::<Vec<_>>();
     for edge in edges {
-        nodes_info[edge.from].outcoming.push(EdgeInfo {
+        nodes_info[edge.from as usize].outcoming.push(EdgeInfo {
             symbol: edge.symbol.clone(),
             other: edge.to,
         });
-        nodes_info[edge.to].incoming.push(EdgeInfo {
+        nodes_info[edge.to as usize].incoming.push(EdgeInfo {
             symbol: edge.symbol.clone(),
             other: edge.from,
         });
@@ -40,7 +40,7 @@ fn traverse_collapsed_group(
     let mut collapsed_group = vec![group_start];
     let mut node_index = group_start;
     loop {
-        let node = &nodes_info[node_index];
+        let node = &nodes_info[node_index as usize];
         if node.outcoming.len() != 1 || node.outcoming[0].symbol.is_some() {
             break;
         }
@@ -55,7 +55,7 @@ fn find_collapsed_nodes(nodes_info: &Vec<NodeInfo>) -> HashMap<CFLNodeIndex, CFL
     for node in nodes_info.iter().filter(|n| {
         n.incoming.len() != 1 && n.outcoming.len() == 1 && n.outcoming[0].symbol.is_none()
     }) {
-        let other_node = &nodes_info[node.outcoming[0].other];
+        let other_node = &nodes_info[node.outcoming[0].other as usize];
         if other_node.incoming.len() == 1 {
             let mut collapsed_group =
                 traverse_collapsed_group(nodes_info, other_node.incoming[0].other);

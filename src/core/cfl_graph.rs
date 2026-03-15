@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub type CFLSymbolIndex = usize;
-pub type CFLNodeIndex = usize;
+pub type CFLNodeIndex = u32;
 pub type CFLFileIndex = usize;
 
 #[derive(Debug, Clone)]

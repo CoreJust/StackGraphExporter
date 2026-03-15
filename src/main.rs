@@ -1,32 +1,31 @@
 mod cfl_querier;
 mod cfl_simplifier;
+mod conversion;
 mod converter;
 mod core;
 mod csv;
 mod dot;
 mod error;
-mod from_serde;
 mod grammar_cfg;
 mod grammar_kt;
 mod io;
 mod loading;
-mod sg_paths_extractor;
 
 use std::{collections::HashSet, path::Path};
 
 use converter::convert_to_cfl;
-use core::SGGraph;
 use dot::ToDOT;
 
 use anyhow::Result;
 
 use crate::{
     cfl_querier::{cflquery, ucfs_cflquery},
+    conversion::{build_sggraph, ProgressEvent as ConversionProgressEvent},
     core::{CFLGraph, CFLPath},
     csv::ToCSV,
     grammar_cfg::ToCFGGrammar,
     grammar_kt::ToKTGrammar,
-    loading::{load_stack_graph, Language, ProgressEvent},
+    loading::{load_stack_graph, Language, ProgressEvent as LoadingProgressEvent},
 };
 
 fn print_query_results_with_metadata(results: Vec<CFLPath>, cflgraph: &CFLGraph) {
@@ -87,7 +86,7 @@ fn sgexport(project_dir: &String, language: String) -> Result<CFLGraph> {
         Language::from_str(language.as_str())?,
         |progress| {
             io::on_same_console_line(|| {
-                if matches!(progress, ProgressEvent::Done { .. }) {
+                if matches!(progress, LoadingProgressEvent::Done { .. }) {
                     println!("{}", progress)
                 } else {
                     print!("{}", progress)
@@ -100,7 +99,15 @@ fn sgexport(project_dir: &String, language: String) -> Result<CFLGraph> {
     //serde_json::to_writer_pretty(out_file, &stack_graph)
     //    .with_context(|| format!("failed to write JSON to {}", output_path))?;
 
-    let sggraph = SGGraph::from_serde(&stack_graph)?;
+    let sggraph = build_sggraph(&stack_graph, |event| {
+        io::on_same_console_line(|| {
+            if matches!(event, ConversionProgressEvent::Done { .. }) {
+                println!("{}", event)
+            } else {
+                print!("{}", event)
+            }
+        })
+    })?;
     sggraph.write_to_dot_file(&sg_output_dot)?;
 
     let cfl = convert_to_cfl(sggraph, true)?;
@@ -172,7 +179,7 @@ fn prompt_line(prompt: &str) -> Result<String> {
     Ok(buf.trim().to_string())
 }
 
-fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<usize> {
+fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<u32> {
     let mut set = std::collections::BTreeSet::new();
     for p in &cflgraph.paths {
         if let Some(meta) = cflgraph.metadata.get(&p.from) {
@@ -182,7 +189,7 @@ fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<usize> {
         }
     }
 
-    let mut vec_idxs: Vec<usize> = set.into_iter().collect();
+    let mut vec_idxs: Vec<u32> = set.into_iter().collect();
     vec_idxs.sort_by_key(|&idx| {
         let meta = &cflgraph.metadata[&idx];
         let file_idx = meta.file.unwrap_or(usize::MAX);
@@ -193,7 +200,7 @@ fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<usize> {
     vec_idxs
 }
 
-fn choose_indices_interactive(matches: &[usize], cflgraph: &CFLGraph) -> Result<Vec<usize>> {
+fn choose_indices_interactive(matches: &[u32], cflgraph: &CFLGraph) -> Result<Vec<u32>> {
     if matches.len() == 1 {
         println!("Found single occurrence at node index {}.", matches[0]);
         return Ok(vec![matches[0]]);
@@ -239,7 +246,7 @@ fn choose_indices_interactive(matches: &[usize], cflgraph: &CFLGraph) -> Result<
 fn write_ucfs_dot_for_indices(
     orig_dot_path: &str,
     out_dot_path: &str,
-    indices: &[usize],
+    indices: &[u32],
 ) -> Result<()> {
     let orig_dot = std::fs::read_to_string(orig_dot_path)
         .map_err(|e| anyhow::anyhow!("Failed to read DOT {}: {}", orig_dot_path, e))?;

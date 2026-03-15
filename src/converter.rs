@@ -32,7 +32,7 @@ fn generate_out_ids(src_nodes: &Vec<SGNode>) -> HashMap<SGNodeIndex, CFLNodeInde
     let mut out_ids = HashMap::<SGNodeIndex, CFLNodeIndex>::new();
     for (i, src_node) in src_nodes.iter().enumerate() {
         if get_symbol_of(src_node).is_some() {
-            out_ids.insert(i, out_ids.len() + src_nodes.len());
+            out_ids.insert(i as u32, out_ids.len() as u32 + src_nodes.len() as u32);
         }
     }
     out_ids
@@ -45,7 +45,7 @@ fn generate_node_metadata(
 ) -> HashMap<CFLNodeIndex, CFLNodeMetadata> {
     let mut metadatas = HashMap::<CFLNodeIndex, CFLNodeMetadata>::with_capacity(out_ids.len());
     for (from, to) in out_ids {
-        let node = &src_nodes[*from];
+        let node = &src_nodes[*from as usize];
         let symbol_index = get_symbol_of(node).unwrap();
         let symbol = &symbols[symbol_index];
         let metadata = CFLNodeMetadata {
@@ -70,7 +70,7 @@ fn generate_for_current_edges(
 ) -> Vec<CFLEdge> {
     let mut edges = Vec::<CFLEdge>::with_capacity(src_edges.len() + out_ids.len());
     for src_edge in src_edges {
-        let from_node = &src_nodes[src_edge.from];
+        let from_node = &src_nodes[src_edge.from as usize];
         if let Some(_) = get_symbol_of(&from_node) {
             edges.push(CFLEdge {
                 from: *out_ids.get(&src_edge.from).unwrap(),
@@ -94,9 +94,16 @@ fn generate_symbol_edges(
     out_ids: &HashMap<SGNodeIndex, CFLNodeIndex>,
 ) {
     for (in_id, out_id) in out_ids.iter() {
-        if let Some(id) = get_symbol_of(&nodes[*in_id]) {
+        if let Some(id) = get_symbol_of(&nodes[*in_id as usize]) {
             edges.push(CFLEdge {
-                symbol: Some(2 * id + if is_push_node(&nodes[*in_id]) { 0 } else { 1 }),
+                symbol: Some(
+                    2 * id
+                        + if is_push_node(&nodes[*in_id as usize]) {
+                            0
+                        } else {
+                            1
+                        },
+                ),
                 from: *in_id,
                 to: *out_id,
             });

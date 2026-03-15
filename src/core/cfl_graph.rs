@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub type CFLSymbolIndex = usize;
 pub type CFLNodeIndex = u32;
@@ -42,7 +42,6 @@ pub struct CFLGraph {
     pub rules: Vec<CFLRule>,
     pub edges: Vec<CFLEdge>,
     pub symbols: Vec<String>,
-    pub paths: HashSet<CFLPath>,
     pub metadata: HashMap<CFLNodeIndex, CFLNodeMetadata>,
     pub files: Vec<String>,
 }

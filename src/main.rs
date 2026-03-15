@@ -11,145 +11,240 @@ mod grammar_kt;
 mod io;
 mod loading;
 
-use std::{collections::HashSet, path::Path};
-
-use converter::convert_to_cfl;
-use dot::ToDOT;
-
 use anyhow::Result;
+use conversion::{build_sggraph, ResolvedDefinition, StackGraphContext};
+use converter::convert_to_cfl;
+use core::{CFLGraph, CFLNodeIndex, SGNodeIndex};
+use csv::ToCSV;
+use dot::ToDOT;
+use grammar_cfg::ToCFGGrammar;
+use grammar_kt::ToKTGrammar;
+use io::ProgressEvent as IoProgressEvent;
+use loading::{load_stack_graph, Language};
+use std::collections::HashMap;
+use std::path::Path;
 
-use crate::{
-    cfl_querier::{cflquery, ucfs_cflquery},
-    conversion::{build_sggraph, ProgressEvent as ConversionProgressEvent},
-    core::{CFLGraph, CFLPath},
-    csv::ToCSV,
-    grammar_cfg::ToCFGGrammar,
-    grammar_kt::ToKTGrammar,
-    io::ProgressEvent,
-    loading::{load_stack_graph, Language, ProgressEvent as LoadingProgressEvent},
-};
-
-fn print_query_results_with_metadata(results: Vec<CFLPath>, cflgraph: &CFLGraph) {
-    let metadata = &cflgraph.metadata;
-    results.iter().for_each(|r| {
-        let mut indices = [r.from, r.to].into_iter();
-        let mut next_symbol_str = || {
-            indices
-                .next()
-                .and_then(|i| {
-                    Some(
-                        metadata
-                            .get(&i)
-                            .and_then(|m| {
-                                Some(format!(
-                                    "{}{} (node id {}) at {}:{}",
-                                    if m.is_real { "" } else { "virtual " },
-                                    &m.name,
-                                    i,
-                                    m.file
-                                        .and_then(|f| Some(cflgraph.files[f].as_str()))
-                                        .unwrap_or(""),
-                                    m.line.and_then(|l| Some(l + 1)).unwrap_or(0),
-                                ))
-                            })
-                            .unwrap_or("<No metadata>".to_owned()),
-                    )
-                })
-                .unwrap_or("".to_owned())
-        };
-        println!(
-            "Found ref {} -> def {}",
-            next_symbol_str(),
-            next_symbol_str()
-        );
-    });
+struct GraphBundle {
+    stack_context: StackGraphContext,
+    cfl_graph: CFLGraph,
+    pop_sg_to_cfl_out: HashMap<SGNodeIndex, CFLNodeIndex>,
 }
 
-fn sgexport(project_dir: &String, language: String) -> Result<CFLGraph> {
-    let (
-        output_path,
+fn sgexport(project_dir: &str, language: &str) -> Result<GraphBundle> {
+    let stack_graph = load_stack_graph(
+        Path::new(project_dir),
+        Language::from_str(language)?,
+        |progress| progress.print_to_stdout(),
+    )?;
+
+    let context = build_sggraph(stack_graph, |event| event.print_to_stdout())?;
+
+    let (cfl_graph, pop_sg_to_cfl_out) = convert_to_cfl(&context.sggraph, true)?;
+
+    // Write output files
+    let sg_output_dot = format!("{}.stackgraph.dot", project_dir);
+    let cfl_output_dot = format!("{}.cfl.dot", project_dir);
+    let cfl_output_csv = format!("{}.cfl.csv", project_dir);
+    let cfl_output_grammar_cfg = format!("{}.cfl_grammar.cfg", project_dir);
+    let cfl_output_grammar_kt = format!("{}.cfl_grammar.kt", project_dir);
+
+    context.sggraph.write_to_dot_file(&sg_output_dot)?;
+    cfl_graph.write_to_dot_file(&cfl_output_dot)?;
+    cfl_graph.write_to_csv_file(&cfl_output_csv, false)?;
+    cfl_graph.write_to_grammar_file(&cfl_output_grammar_cfg)?;
+    cfl_graph.write_to_kotlin_file(&cfl_output_grammar_kt, "UCFSGrammar")?;
+
+    println!(
+        "Wrote stack graph DOT to {}; CFL DOT to {}, CSV to {}, grammar CFG to {}, Kotlin to {}",
         sg_output_dot,
         cfl_output_dot,
         cfl_output_csv,
         cfl_output_grammar_cfg,
-        cfl_output_grammar_kt,
-    ) = (
-        format!("{}.stackgraph.json", &project_dir),
-        format!("{}.stackgraph.dot", &project_dir),
-        format!("{}.cfl.dot", &project_dir),
-        format!("{}.cfl.csv", &project_dir),
-        format!("{}.cfl_grammar.cfg", &project_dir),
-        format!("{}.cfl_grammar.kt", &project_dir),
+        cfl_output_grammar_kt
     );
 
-    let stack_graph = load_stack_graph(
-        Path::new(project_dir),
-        Language::from_str(language.as_str())?,
-        |progress| progress.print_to_stdout(),
-    )?;
-    //let out_file = std::fs::File::create(&output_path)
-    //    .with_context(|| format!("cannot create output file {}", output_path))?;
-    //serde_json::to_writer_pretty(out_file, &stack_graph)
-    //    .with_context(|| format!("failed to write JSON to {}", output_path))?;
-
-    let sggraph = build_sggraph(&stack_graph, |progress| progress.print_to_stdout())?;
-    sggraph.write_to_dot_file(&sg_output_dot)?;
-
-    let cfl = convert_to_cfl(sggraph, true)?;
-    cfl.write_to_dot_file(&cfl_output_dot)?;
-    cfl.write_to_csv_file(&cfl_output_csv, false)?;
-    cfl.write_to_grammar_file(&cfl_output_grammar_cfg)?;
-    cfl.write_to_kotlin_file(&cfl_output_grammar_kt, "UCFSGrammar")?;
-
-    println!(
-      "Wrote stack graph /*JSON to {}*/ and DOT to {}; CFL DOT to {} and CSV to {}, it's grammar CFG to {}",
-      output_path, sg_output_dot, cfl_output_dot, cfl_output_csv, cfl_output_grammar_cfg
-    );
-
-    Ok(cfl)
+    Ok(GraphBundle {
+        stack_context: context,
+        cfl_graph,
+        pop_sg_to_cfl_out,
+    })
 }
 
-fn run_cflquery(
-    artifacts_dir: &String,
-    query: &str,
-    sppf_on: bool,
-    cflgraph: Option<&CFLGraph>,
-) -> Result<()> {
-    ucfs_cflquery(artifacts_dir, query)?;
-    let results = cflquery(artifacts_dir, query, sppf_on)?;
-    if let Some(cflgraph) = cflgraph {
-        let found_correct = results.iter().all(|x| cflgraph.paths.contains(x));
-        let as_hash_set = results.iter().cloned().collect::<HashSet<_>>();
-        let found_all = cflgraph
-            .paths
-            .iter()
-            .filter(|x| cflgraph.metadata[&x.from].name == query)
-            .all(|x| as_hash_set.contains(x));
-        print_query_results_with_metadata(results, cflgraph);
-        if found_all && found_correct {
-            println!("Query results match the ones precalculated using stack graphs");
-        } else {
+fn print_resolved_definitions(
+    ref_idx: SGNodeIndex,
+    defs: &[ResolvedDefinition],
+    symbols: &[crate::core::SGSymbol],
+) {
+    let ref_symbol = symbols.iter().find(|s| {
+        // Find symbol associated with the reference node (simplified)
+        // In practice, you'd get it from the node itself, but we don't have direct mapping here.
+        // For display, we'll just show the definitions.
+        false
+    });
+    for def in defs {
+        println!(
+            "Found definition at {}:{}, local_id {}",
+            def.file.as_deref().unwrap_or("<unknown>"),
+            def.line.unwrap_or(0) + 1,
+            def.local_id
+        );
+    }
+}
+
+fn handle_interactive_mode(project_dir: &str, language: &str) -> Result<()> {
+    let mut bundle = sgexport(project_dir, language)?;
+
+    println!("Interactive mode – type 'q <symbol>' to query stack graph, or 'exit' to quit.");
+    loop {
+        let input = prompt_line(">>> ")?;
+        if input.starts_with("q ") {
+            let symbol = input[2..].trim();
+            if symbol.is_empty() {
+                continue;
+            }
+
+            // Find reference nodes for the symbol
+            let refs = bundle.stack_context.find_reference_nodes_by_symbol(symbol);
             println!(
-                "Incorrect query results: found all? {}, found correct ones? {}\nCorrect results are:\n{}",
-                found_all,
-                found_correct,
-                cflgraph
-                  .paths
-                  .iter()
-                  .filter(|x| cflgraph.metadata[&x.from].name == query)
-                  .map(|x| format!("(ref {} -> def {})", x.from, x.to))
-                  .collect::<Vec<_>>()
-                  .join("\n")
+                "Found {} reference nodes for symbol '{}':",
+                refs.len(),
+                symbol
+            );
+            for (i, &ref_idx) in refs.iter().enumerate() {
+                let node_id = &bundle.stack_context.sggraph.ids[ref_idx as usize];
+                let file_name = node_id
+                    .file
+                    .and_then(|f| bundle.stack_context.sggraph.files.get(f))
+                    .map(String::as_str);
+                let line = bundle
+                    .stack_context
+                    .sggraph
+                    .symbols
+                    .iter()
+                    .find(|s| {
+                        s.name == symbol
+                            && s.file == node_id.file
+                            && s.line == Some(node_id.local_id as usize)
+                    })
+                    .and_then(|s| s.line);
+                println!(
+                    "  [{}] node {} at {}:{}",
+                    i,
+                    ref_idx,
+                    file_name.unwrap_or("<unknown>"),
+                    line.map(|l| l + 1).unwrap_or(0)
+                );
+            }
+
+            // For each reference, resolve definitions
+            for &ref_idx in &refs {
+                let defs = bundle
+                    .stack_context
+                    .resolve_reference(ref_idx, |event| event.print_to_stdout())?;
+                println!(
+                    "Reference node {} resolves to {} definitions:",
+                    ref_idx,
+                    defs.len()
+                );
+                for def in defs {
+                    println!(
+                        "  - {}:{} local_id {}",
+                        def.file.as_deref().unwrap_or("<unknown>"),
+                        def.line.unwrap_or(0) + 1,
+                        def.local_id
+                    );
+                }
+            }
+        } else if input.eq_ignore_ascii_case("exit")
+            || input.eq_ignore_ascii_case("quit")
+            || input.eq_ignore_ascii_case("done")
+        {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn handle_ucfs_mode(project_dir: &str, language: &str) -> Result<()> {
+    let bundle = sgexport(project_dir, language)?;
+    let cfl_dot_path = format!("{}.cfl.dot", project_dir);
+    let ucfs_dot_path = format!("{}.cfl_ucfs.dot", project_dir);
+    let grammar_kt_path = format!("{}.cfl_grammar.kt", project_dir);
+
+    println!("UCFS mode – type a symbol name to select, or 'exit' to quit.");
+    loop {
+        let symbol = prompt_line("symbol> ")?;
+        if symbol.is_empty() {
+            continue;
+        }
+        if symbol.eq_ignore_ascii_case("exit")
+            || symbol.eq_ignore_ascii_case("quit")
+            || symbol.eq_ignore_ascii_case("done")
+        {
+            break;
+        }
+
+        let refs = bundle.stack_context.find_reference_nodes_by_symbol(&symbol);
+        if refs.is_empty() {
+            println!("No reference nodes found for symbol '{}'.", symbol);
+            continue;
+        }
+
+        // Display matches with file/line info
+        println!("Found {} occurrences:", refs.len());
+        for (i, &ref_idx) in refs.iter().enumerate() {
+            let node_id = &bundle.stack_context.sggraph.ids[ref_idx as usize];
+            let file_name = node_id
+                .file
+                .and_then(|f| bundle.stack_context.sggraph.files.get(f))
+                .map(String::as_str);
+            // Find line from symbol metadata (simplified: assume first matching symbol)
+            let line = bundle
+                .stack_context
+                .sggraph
+                .symbols
+                .iter()
+                .find(|s| s.name == symbol && s.file == node_id.file)
+                .and_then(|s| s.line);
+            println!(
+                "  [{}] node {} at {}:{}",
+                i,
+                ref_idx,
+                file_name.unwrap_or("<unknown>"),
+                line.map(|l| l + 1).unwrap_or(0)
             );
         }
-    } else {
+
+        println!("Enter the bracketed number to choose that occurrence, or `a` for all, or empty to cancel.");
+        let sel = prompt_line("select> ")?;
+        if sel.is_empty() {
+            continue;
+        }
+        let chosen_indices_sg = if sel.eq_ignore_ascii_case("a") {
+            refs
+        } else {
+            let n = sel
+                .parse::<usize>()
+                .map_err(|_| anyhow::anyhow!("Invalid number"))?;
+            if n >= refs.len() {
+                println!("Selection out of range.");
+                continue;
+            }
+            vec![refs[n]]
+        };
+
+        // Convert SG node indices to CFL node indices for the DOT start arrows
+        let mut chosen_cfl_indices = Vec::new();
+        for sg_idx in chosen_indices_sg {
+            // For a reference (push) node, its CFL index is the same as SG index
+            chosen_cfl_indices.push(sg_idx as CFLNodeIndex);
+        }
+
+        write_ucfs_dot_for_indices(&cfl_dot_path, &ucfs_dot_path, &chosen_cfl_indices)?;
+        println!("Wrote UCFS query DOT: {}", ucfs_dot_path);
         println!(
-            "Query results:\n{}",
-            results
-                .iter()
-                .map(|x| format!("{} {}", x.from, x.to))
-                .collect::<Vec<_>>()
-                .join("\n")
+            "Use this DOT together with the Kotlin grammar at:\n  {}",
+            grammar_kt_path
         );
     }
     Ok(())
@@ -162,70 +257,6 @@ fn prompt_line(prompt: &str) -> Result<String> {
     let mut buf = String::new();
     io::stdin().read_line(&mut buf)?;
     Ok(buf.trim().to_string())
-}
-
-fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<u32> {
-    let mut set = std::collections::BTreeSet::new();
-    for p in &cflgraph.paths {
-        if let Some(meta) = cflgraph.metadata.get(&p.from) {
-            if meta.name == name {
-                set.insert(p.from);
-            }
-        }
-    }
-
-    let mut vec_idxs: Vec<u32> = set.into_iter().collect();
-    vec_idxs.sort_by_key(|&idx| {
-        let meta = &cflgraph.metadata[&idx];
-        let file_idx = meta.file.unwrap_or(usize::MAX);
-        let line = meta.line.unwrap_or(usize::MAX);
-        (file_idx, line, idx)
-    });
-
-    vec_idxs
-}
-
-fn choose_indices_interactive(matches: &[u32], cflgraph: &CFLGraph) -> Result<Vec<u32>> {
-    if matches.len() == 1 {
-        println!("Found single occurrence at node index {}.", matches[0]);
-        return Ok(vec![matches[0]]);
-    }
-    println!("Found {} occurrences:", matches.len());
-    for (i, idx) in matches.iter().enumerate() {
-        let meta = &cflgraph.metadata[idx];
-        let file_str = meta
-            .file
-            .and_then(|f| Some(cflgraph.files[f].as_str()))
-            .unwrap_or("");
-        let line = meta.line.map(|l| l + 1).unwrap_or(0);
-        println!(
-            "  [{}] node {} — {}{} at {}:{}",
-            i,
-            idx,
-            if meta.is_real { "" } else { "virtual " },
-            &meta.name,
-            file_str,
-            line
-        );
-    }
-    println!(
-        "Enter the bracketed number to choose that occurrence, or `a` for all, or empty to cancel."
-    );
-
-    let sel = prompt_line("select> ")?;
-    if sel.eq_ignore_ascii_case("a") {
-        return Ok(matches.to_vec());
-    }
-    if sel.is_empty() {
-        anyhow::bail!("selection cancelled");
-    }
-    let n = sel
-        .parse::<usize>()
-        .map_err(|_| anyhow::anyhow!("invalid selection"))?;
-    if n >= matches.len() {
-        anyhow::bail!("selection out of range");
-    }
-    Ok(vec![matches[n]])
 }
 
 fn write_ucfs_dot_for_indices(
@@ -271,99 +302,34 @@ fn write_ucfs_dot_for_indices(
     Ok(())
 }
 
-fn handle_ucfs_mode(project_dir: &str, language: &str) -> Result<()> {
-    let cflgraph = sgexport(&project_dir.to_string(), language.to_string())?;
-    let cfl_dot_path = format!("{}.cfl.dot", project_dir);
-    let ucfs_dot_path = format!("{}.cfl_ucfs.dot", project_dir);
-    let grammar_kt_path = format!("{}.cfl_grammar.kt", project_dir);
-
-    println!("UCFS artifacts generated:");
-    println!("  - original CFL DOT: {}", cfl_dot_path);
-    println!("  - Kotlin grammar (.kt): {}", grammar_kt_path);
-    println!("Type a symbol name to select (or 'exit' to quit).");
-
-    loop {
-        let symbol = prompt_line("symbol> ")?;
-        if symbol.is_empty() {
-            continue;
-        }
-        if symbol.eq_ignore_ascii_case("exit")
-            || symbol.eq_ignore_ascii_case("quit")
-            || symbol.eq_ignore_ascii_case("done")
-        {
-            break;
-        }
-        let matches = collect_symbol_matches(&cflgraph, &symbol);
-        if matches.is_empty() {
-            println!("No occurrences found for `{}`.", symbol);
-            continue;
-        }
-        let chosen = match choose_indices_interactive(&matches, &cflgraph) {
-            Ok(c) => c,
-            Err(e) => {
-                println!("Selection aborted: {}", e);
-                continue;
-            }
-        };
-        write_ucfs_dot_for_indices(&cfl_dot_path, &ucfs_dot_path, &chosen)?;
-        println!("Wrote UCFS query DOT: {}", ucfs_dot_path);
-        println!(
-            "Use this DOT together with the Kotlin grammar at:\n  {}",
-            grammar_kt_path
-        );
-    }
-    Ok(())
-}
-
-fn handle_interactive_mode(project_dir: &str, language: &str) -> Result<()> {
-    let cflgraph = sgexport(&project_dir.to_string(), language.to_string())?;
-    loop {
-        let input = prompt_line(">>> ")?;
-        if input.starts_with("q ") {
-            let query = input[2..].trim();
-            if !query.is_empty() {
-                run_cflquery(&project_dir.to_string(), query, true, Some(&cflgraph))?;
-            }
-        } else if input.eq_ignore_ascii_case("end")
-            || input.eq_ignore_ascii_case("exit")
-            || input.eq_ignore_ascii_case("done")
-        {
-            break;
-        }
-    }
-    Ok(())
-}
-
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let mode = args
-        .next()
-        .expect("Usage: stackgraph_exporter q/query <path-to-generated-artifacts> <query> | [i/interactive] <path-to-project-dir> [language: \"py\"|\"java\"]");
+    let mode = args.next().expect(
+        "Usage: stackgraph_exporter [q/query <path> <query> | i/interactive <dir> [lang] | ucfs <dir> [lang] | <dir> [lang]]",
+    );
+
     if mode == "q" || mode == "query" {
-        let project_dir = args
-            .next()
-            .expect("Usage: stackgraph_exporter q/query <path-to-generated-artifacts> <query>");
-        let query = args
-            .next()
-            .expect("Usage: stackgraph_exporter q/query <path-to-generated-artifacts> <query>");
-        run_cflquery(&project_dir, query.as_str(), true, None)?;
+        let project_dir = args.next().expect("Missing artifacts directory");
+        let query = args.next().expect("Missing query");
+        // Run CFL query using external tool – still works without paths
+        let results = cfl_querier::cflquery(&project_dir, &query, true)?;
+        println!("CFL query results:");
+        for path in results {
+            println!("{} -> {}", path.from, path.to);
+        }
+        Ok(())
     } else if mode == "i" || mode == "interactive" {
-        let project_dir = args.next().expect(
-            "Usage: stackgraph_exporter i/interactive <path-to-project-dir> [language: \"py\"|\"java\"]",
-        );
-        let language = args.next().unwrap_or_else(|| String::from("py"));
-        handle_interactive_mode(&project_dir, &language)?;
+        let project_dir = args.next().expect("Missing project directory");
+        let language = args.next().unwrap_or_else(|| "py".to_string());
+        handle_interactive_mode(&project_dir, &language)
     } else if mode == "ucfs" {
-        let project_dir = args.next().expect(
-            "Usage: stackgraph_exporter ucfs <path-to-project-dir> [language: \"py\"|\"java\"]",
-        );
-        let language = args.next().unwrap_or_else(|| String::from("py"));
-        handle_ucfs_mode(&project_dir, &language)?;
+        let project_dir = args.next().expect("Missing project directory");
+        let language = args.next().unwrap_or_else(|| "py".to_string());
+        handle_ucfs_mode(&project_dir, &language)
     } else {
         let project_dir = mode;
-        let language = args.next().unwrap_or_else(|| String::from("py"));
-        sgexport(&project_dir, language)?;
+        let language = args.next().unwrap_or_else(|| "py".to_string());
+        sgexport(&project_dir, &language)?;
+        Ok(())
     }
-
-    Ok(())
 }

@@ -2,6 +2,8 @@ use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::io::ProgressEvent as IOProgressEvent;
+
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     FilesFound {
@@ -67,6 +69,15 @@ impl fmt::Display for ProgressEvent {
                     elapsed.as_millis(),
                 )
             }
+        }
+    }
+}
+
+impl IOProgressEvent for ProgressEvent {
+    fn is_final_state(&self) -> bool {
+        match self {
+            ProgressEvent::Done { .. } => true,
+            _ => false,
         }
     }
 }

@@ -25,6 +25,7 @@ use crate::{
     csv::ToCSV,
     grammar_cfg::ToCFGGrammar,
     grammar_kt::ToKTGrammar,
+    io::ProgressEvent,
     loading::{load_stack_graph, Language, ProgressEvent as LoadingProgressEvent},
 };
 
@@ -84,30 +85,14 @@ fn sgexport(project_dir: &String, language: String) -> Result<CFLGraph> {
     let stack_graph = load_stack_graph(
         Path::new(project_dir),
         Language::from_str(language.as_str())?,
-        |progress| {
-            io::on_same_console_line(|| {
-                if matches!(progress, LoadingProgressEvent::Done { .. }) {
-                    println!("{}", progress)
-                } else {
-                    print!("{}", progress)
-                }
-            })
-        },
+        |progress| progress.print_to_stdout(),
     )?;
     //let out_file = std::fs::File::create(&output_path)
     //    .with_context(|| format!("cannot create output file {}", output_path))?;
     //serde_json::to_writer_pretty(out_file, &stack_graph)
     //    .with_context(|| format!("failed to write JSON to {}", output_path))?;
 
-    let sggraph = build_sggraph(&stack_graph, |event| {
-        io::on_same_console_line(|| {
-            if matches!(event, ConversionProgressEvent::Done { .. }) {
-                println!("{}", event)
-            } else {
-                print!("{}", event)
-            }
-        })
-    })?;
+    let sggraph = build_sggraph(&stack_graph, |progress| progress.print_to_stdout())?;
     sggraph.write_to_dot_file(&sg_output_dot)?;
 
     let cfl = convert_to_cfl(sggraph, true)?;

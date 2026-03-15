@@ -4,11 +4,11 @@ use stack_graphs::graph::StackGraph;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    sg_paths_extractor::extract_complete_paths_from,
-    types::{
+    core::{
         SGEdge, SGFileIndex, SGGraph, SGNode, SGNodeId, SGNodeIndex, SGPath, SGSymbol,
         SGSymbolIndex,
     },
+    sg_paths_extractor::extract_complete_paths_from,
 };
 
 pub fn get_field<'a>(v: &'a Map<String, Value>, f: &str) -> Result<&'a Value> {

@@ -1,4 +1,4 @@
-use crate::types::CFLGraph;
+use crate::core::CFLGraph;
 use anyhow::Result;
 
 pub trait ToCFGGrammar {
@@ -25,10 +25,10 @@ impl ToCFGGrammar for CFLGraph {
                     r.to.iter()
                         .map(|s| {
                             match s {
-                                crate::types::CFLSymbol::Terminal(i) => {
+                                crate::core::CFLSymbol::Terminal(i) => {
                                     format!("Terminal(\"{}\")", &self.symbols[*i])
                                 }
-                                crate::types::CFLSymbol::NonTerminal(i) => {
+                                crate::core::CFLSymbol::NonTerminal(i) => {
                                     format!("Nonterminal(\"{}\")", &self.symbols[*i])
                                 }
                             }

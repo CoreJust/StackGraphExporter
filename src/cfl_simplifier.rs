@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::types::{CFLEdge, CFLNodeIndex, CFLNodeMetadata, CFLPath, CFLSymbolIndex};
+use crate::core::{CFLEdge, CFLNodeIndex, CFLNodeMetadata, CFLPath, CFLSymbolIndex};
 
 #[derive(Default)]
 struct EdgeInfo {

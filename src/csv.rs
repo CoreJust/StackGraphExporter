@@ -1,4 +1,4 @@
-use crate::types::CFLGraph;
+use crate::core::CFLGraph;
 use anyhow::Result;
 
 pub trait ToCSV {

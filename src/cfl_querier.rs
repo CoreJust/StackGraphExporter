@@ -1,4 +1,4 @@
-use crate::types::{CFLNodeIndex, CFLPath};
+use crate::core::{CFLNodeIndex, CFLPath};
 use anyhow::Result;
 use regex::Regex;
 use std::path::Path;

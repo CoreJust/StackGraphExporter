@@ -1,6 +1,7 @@
 mod cfl_querier;
 mod cfl_simplifier;
 mod converter;
+mod core;
 mod csv;
 mod dot;
 mod from_serde;
@@ -8,23 +9,22 @@ mod grammar_cfg;
 mod grammar_kt;
 mod loader;
 mod sg_paths_extractor;
-mod types;
 
 use std::collections::HashSet;
 
 use converter::convert_to_cfl;
+use core::SGGraph;
 use dot::ToDOT;
 use loader::load_graph;
-use types::SGGraph;
 
 use anyhow::Result;
 
 use crate::{
     cfl_querier::{cflquery, ucfs_cflquery},
+    core::{CFLGraph, CFLPath},
     csv::ToCSV,
     grammar_cfg::ToCFGGrammar,
     grammar_kt::ToKTGrammar,
-    types::{CFLGraph, CFLPath},
 };
 
 fn print_query_results_with_metadata(results: Vec<CFLPath>, cflgraph: &CFLGraph) {
@@ -158,7 +158,7 @@ fn prompt_line(prompt: &str) -> Result<String> {
     Ok(buf.trim().to_string())
 }
 
-fn collect_symbol_matches(cflgraph: &crate::types::CFLGraph, name: &str) -> Vec<usize> {
+fn collect_symbol_matches(cflgraph: &CFLGraph, name: &str) -> Vec<usize> {
     let mut set = std::collections::BTreeSet::new();
     for p in &cflgraph.paths {
         if let Some(meta) = cflgraph.metadata.get(&p.from) {
@@ -179,10 +179,7 @@ fn collect_symbol_matches(cflgraph: &crate::types::CFLGraph, name: &str) -> Vec<
     vec_idxs
 }
 
-fn choose_indices_interactive(
-    matches: &[usize],
-    cflgraph: &crate::types::CFLGraph,
-) -> Result<Vec<usize>> {
+fn choose_indices_interactive(matches: &[usize], cflgraph: &CFLGraph) -> Result<Vec<usize>> {
     if matches.len() == 1 {
         println!("Found single occurrence at node index {}.", matches[0]);
         return Ok(vec![matches[0]]);

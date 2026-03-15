@@ -1,3 +1,4 @@
+use crate::core::{CFLGraph, CFLSymbol};
 use anyhow::Result;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
@@ -15,7 +16,7 @@ pub trait ToKTGrammar {
     }
 }
 
-impl ToKTGrammar for crate::types::CFLGraph {
+impl ToKTGrammar for CFLGraph {
     fn to_kotlin_lines(&self, class_name: &str) -> Vec<String> {
         fn sanitize_ident(s: &str, fallback_idx: usize) -> String {
             let mut out = String::with_capacity(s.len());
@@ -41,7 +42,7 @@ impl ToKTGrammar for crate::types::CFLGraph {
         for r in &self.rules {
             nt_indices.insert(r.from_non_terminal, ());
             for sym in &r.to {
-                if let crate::types::CFLSymbol::NonTerminal(i) = sym {
+                if let CFLSymbol::NonTerminal(i) = sym {
                     nt_indices.insert(*i, ());
                 }
             }
@@ -73,7 +74,7 @@ impl ToKTGrammar for crate::types::CFLGraph {
         }
         let start_idx = found_start.unwrap_or_else(|| *nt_indices.keys().next().unwrap());
 
-        let mut prods: BTreeMap<usize, Vec<Vec<crate::types::CFLSymbol>>> = BTreeMap::new();
+        let mut prods: BTreeMap<usize, Vec<Vec<CFLSymbol>>> = BTreeMap::new();
         for r in &self.rules {
             prods
                 .entry(r.from_non_terminal)
@@ -113,12 +114,12 @@ impl ToKTGrammar for crate::types::CFLGraph {
                 let mut parts: Vec<String> = Vec::new();
                 for sym in rhs.iter() {
                     match sym {
-                        crate::types::CFLSymbol::Terminal(i) => {
+                        CFLSymbol::Terminal(i) => {
                             let raw = &self.symbols[*i];
                             let esc = raw.replace('\\', "\\\\").replace('"', "\\\"");
                             parts.push(format!("Term(\"{}\")", esc));
                         }
-                        crate::types::CFLSymbol::NonTerminal(i) => {
+                        CFLSymbol::NonTerminal(i) => {
                             let name = name_map.get(i).expect("nonterminal mapping missing");
                             parts.push(name.clone());
                         }

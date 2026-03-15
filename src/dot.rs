@@ -1,4 +1,4 @@
-use crate::types::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
+use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use anyhow::Result;
 
 pub trait ToDOT {

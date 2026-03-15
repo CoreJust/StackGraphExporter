@@ -1,6 +1,6 @@
 use crate::{
     cfl_simplifier::simplify_graph,
-    types::{
+    core::{
         CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLPath, CFLRule, CFLSymbol, SGEdge,
         SGGraph, SGNode, SGNodeIndex, SGSymbol, SGSymbolIndex,
     },

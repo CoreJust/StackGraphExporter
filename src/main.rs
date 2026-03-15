@@ -4,18 +4,19 @@ mod converter;
 mod core;
 mod csv;
 mod dot;
+mod error;
 mod from_serde;
 mod grammar_cfg;
 mod grammar_kt;
-mod loader;
+mod io;
+mod loading;
 mod sg_paths_extractor;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
 
 use converter::convert_to_cfl;
 use core::SGGraph;
 use dot::ToDOT;
-use loader::load_graph;
 
 use anyhow::Result;
 
@@ -25,6 +26,7 @@ use crate::{
     csv::ToCSV,
     grammar_cfg::ToCFGGrammar,
     grammar_kt::ToKTGrammar,
+    loading::{load_stack_graph, Language, ProgressEvent},
 };
 
 fn print_query_results_with_metadata(results: Vec<CFLPath>, cflgraph: &CFLGraph) {
@@ -80,7 +82,19 @@ fn sgexport(project_dir: &String, language: String) -> Result<CFLGraph> {
         format!("{}.cfl_grammar.kt", &project_dir),
     );
 
-    let stack_graph = load_graph(&project_dir, &language)?;
+    let stack_graph = load_stack_graph(
+        Path::new(project_dir),
+        Language::from_str(language.as_str())?,
+        |progress| {
+            io::on_same_console_line(|| {
+                if matches!(progress, ProgressEvent::Done { .. }) {
+                    println!("{}", progress)
+                } else {
+                    print!("{}", progress)
+                }
+            })
+        },
+    )?;
     //let out_file = std::fs::File::create(&output_path)
     //    .with_context(|| format!("cannot create output file {}", output_path))?;
     //serde_json::to_writer_pretty(out_file, &stack_graph)

@@ -45,3 +45,15 @@ impl Error {
         }
     }
 }
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self::Internal(value.to_string())
+    }
+}
+
+impl From<std::num::ParseIntError> for Error {
+    fn from(value: std::num::ParseIntError) -> Self {
+        Self::Internal(value.to_string())
+    }
+}

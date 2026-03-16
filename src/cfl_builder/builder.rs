@@ -3,7 +3,7 @@ use crate::core::{
     CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLRule, CFLSymbol, SGEdge, SGGraph, SGNode,
     SGNodeIndex, SGSymbol, SGSymbolIndex,
 };
-use anyhow::Result;
+use crate::error::Result;
 use std::collections::HashMap;
 
 fn get_symbol_of(node: &SGNode) -> Option<SGSymbolIndex> {

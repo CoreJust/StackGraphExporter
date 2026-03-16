@@ -1,5 +1,5 @@
+mod builder;
 mod cfl_simplifier;
-mod converter;
 
+pub use builder::convert_to_cfl;
 pub use cfl_simplifier::simplify_graph;
-pub use converter::convert_to_cfl;

@@ -1,16 +1,18 @@
+use std::path::PathBuf;
+
 use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
-use anyhow::Result;
+use crate::error::Result;
 
 pub trait ToDOT {
-    fn to_dot_lines(self: &Self) -> Vec<String>;
+    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String>;
 
-    fn write_to_dot_file(self: &Self, out_path: &String) -> Result<()> {
+    fn write_to_dot_file(self: &Self, out_path: &PathBuf, clean_dot: bool) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 
         let mut out_file = File::create(&out_path)?;
 
-        for line in self.to_dot_lines().into_iter() {
+        for line in self.to_dot_lines(clean_dot).into_iter() {
             writeln!(out_file, "{}", line)?;
         }
         Ok(())
@@ -85,11 +87,13 @@ fn make_node_name(
 }
 
 impl ToDOT for SGGraph {
-    fn to_dot_lines(self: &Self) -> Vec<String> {
+    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String> {
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
-        dot_lines.push("  rankdir=LR;".to_string());
-        dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+        if !clean_dot {
+            dot_lines.push("  rankdir=LR;".to_string());
+            dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+        }
         for (i, node) in self.nodes.iter().enumerate() {
             let id = &self.ids[i];
             let node_name = make_node_name(&self.ids, &id, &self.symbols, &self.files, &node);
@@ -107,11 +111,13 @@ impl ToDOT for SGGraph {
 }
 
 impl ToDOT for CFLGraph {
-    fn to_dot_lines(self: &Self) -> Vec<String> {
+    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String> {
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
-        //dot_lines.push("  rankdir=LR;".to_string());
-        //dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+        if !clean_dot {
+            dot_lines.push("  rankdir=LR;".to_string());
+            dot_lines.push("  node [shape=box, fontsize=10];".to_string());
+        }
 
         for edge in &self.edges {
             let label = edge

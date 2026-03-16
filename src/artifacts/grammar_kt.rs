@@ -1,13 +1,14 @@
 use crate::core::{CFLGraph, CFLSymbol};
-use anyhow::Result;
+use crate::error::Result;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
 
 pub trait ToKTGrammar {
     fn to_kotlin_lines(&self, class_name: &str) -> Vec<String>;
 
-    fn write_to_kotlin_file(&self, out_path: &str, class_name: &str) -> Result<()> {
+    fn write_to_kotlin_file(&self, out_path: &PathBuf, class_name: &str) -> Result<()> {
         let mut file = File::create(out_path)?;
         for line in self.to_kotlin_lines(class_name).into_iter() {
             writeln!(file, "{}", line)?;

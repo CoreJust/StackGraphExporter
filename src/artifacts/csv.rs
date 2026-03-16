@@ -1,10 +1,12 @@
+use std::path::PathBuf;
+
 use crate::core::CFLGraph;
-use anyhow::Result;
+use crate::error::Result;
 
 pub trait ToCSV {
     fn to_csv_table(self: &Self) -> Vec<(String, Vec<String>)>; // Vec of columns
 
-    fn write_to_csv_file(self: &Self, out_path: &String, print_titles: bool) -> Result<()> {
+    fn write_to_csv_file(self: &Self, out_path: &PathBuf, print_titles: bool) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 

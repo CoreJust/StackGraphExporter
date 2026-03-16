@@ -11,8 +11,9 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedDefinition {
-    pub file: Option<String>,
-    pub line: Option<usize>,
+    pub file: String,
+    pub line: usize,
+    pub col: usize,
     pub local_id: u32,
 }
 
@@ -39,7 +40,7 @@ impl StackGraphContext {
                 }
             }
         }
-        println!(
+        crate::info!(
             "Found {} refs and {defs} defs for symbol {name}",
             result.len()
         );
@@ -112,14 +113,20 @@ impl StackGraphContext {
                     let file_struct = &self.stack_graph[fh];
                     file_struct.name().to_string()
                 });
-                let line = self
+                let (line, col) = self
                     .stack_graph
                     .source_info(node_handle)
-                    .and_then(|si| Some(si.span.start.line))
-                    .map(|l| l as usize);
+                    .and_then(|si| {
+                        Some((
+                            si.span.start.line as usize,
+                            si.span.start.column.utf8_offset as usize,
+                        ))
+                    })
+                    .expect("An end node must have source info");
                 ResolvedDefinition {
-                    file,
+                    file: file.expect("An end node must have a file"),
                     line,
+                    col,
                     local_id,
                 }
             })

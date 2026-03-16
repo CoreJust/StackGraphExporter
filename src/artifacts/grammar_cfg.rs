@@ -1,10 +1,12 @@
+use std::path::PathBuf;
+
 use crate::core::CFLGraph;
-use anyhow::Result;
+use crate::error::Result;
 
 pub trait ToCFGGrammar {
     fn to_grammar_lines(self: &Self) -> Vec<String>;
 
-    fn write_to_grammar_file(self: &Self, out_path: &String) -> Result<()> {
+    fn write_to_grammar_file(self: &Self, out_path: &PathBuf) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 

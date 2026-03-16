@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use crate::io::ProgressEvent as IOProgressEvent;
+use crate::io::{ProgressEvent as IOProgressEvent, ProgressState};
 
 pub enum ProgressEvent {
     SerializingStackGraph {
@@ -28,50 +28,66 @@ pub enum ProgressEvent {
 impl fmt::Display for ProgressEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProgressEvent::SerializingStackGraph { elapsed } => {
-                write!(f, "[{} ms] Serializing stack graph", elapsed.as_millis())
+            ProgressEvent::SerializingStackGraph { .. } => {
+                write!(f, "Serializing stack graph")
             }
-            ProgressEvent::ParsingNodes {
-                current,
-                total,
-                elapsed,
-            } => {
-                write!(
-                    f,
-                    "[{} ms] Parsing nodes... {}/{}",
-                    elapsed.as_millis(),
-                    current,
-                    total,
-                )
+            ProgressEvent::ParsingNodes { .. } => {
+                write!(f, "Parsing nodes")
             }
-            ProgressEvent::ParsingEdges {
-                current,
-                total,
-                elapsed,
-            } => {
-                write!(
-                    f,
-                    "[{} ms] Parsing edges... {}/{}",
-                    elapsed.as_millis(),
-                    current,
-                    total,
-                )
+            ProgressEvent::ParsingEdges { .. } => {
+                write!(f, "Parsing edges")
             }
-            ProgressEvent::ResolvingScopes { elapsed } => {
-                write!(f, "[{} ms] Resolving scopes", elapsed.as_millis())
+            ProgressEvent::ResolvingScopes { .. } => {
+                write!(f, "Resolving scopes")
             }
-            ProgressEvent::GraphBuilt { elapsed } => {
-                write!(f, "[{} ms] SGGraph built successfully", elapsed.as_millis())
+            ProgressEvent::GraphBuilt { .. } => {
+                write!(f, "SGGraph built successfully")
             }
         }
     }
 }
 
 impl IOProgressEvent for ProgressEvent {
-    fn is_final_state(&self) -> bool {
+    fn state(&self) -> crate::io::ProgressState {
         match self {
-            ProgressEvent::GraphBuilt { .. } => true,
-            _ => false,
+            ProgressEvent::SerializingStackGraph { elapsed } => ProgressState {
+                is_final: false,
+                elapsed: *elapsed,
+                progress: 0.0,
+                objects_handled: None,
+            },
+            ProgressEvent::ParsingNodes {
+                current,
+                total,
+                elapsed,
+            } => ProgressState {
+                is_final: false,
+                elapsed: *elapsed,
+                progress: *current as f32 / *total as f32,
+                objects_handled: Some((*current, *total)),
+            },
+            ProgressEvent::ParsingEdges {
+                current,
+                total,
+                elapsed,
+            } => ProgressState {
+                is_final: false,
+                elapsed: *elapsed,
+                progress: *current as f32 / *total as f32,
+                objects_handled: Some((*current, *total)),
+            },
+            ProgressEvent::ResolvingScopes { elapsed } => ProgressState {
+                is_final: false,
+                elapsed: *elapsed,
+                progress: 0.0,
+                objects_handled: None,
+            },
+            ProgressEvent::GraphBuilt { elapsed } => ProgressState {
+                is_final: true,
+                elapsed: *elapsed,
+                progress: 1.0,
+                objects_handled: None,
+            },
         }
     }
 }

@@ -50,8 +50,7 @@ fn traverse_collapsed_group(
 
 fn find_collapsed_nodes(nodes_info: &[NodeInfo]) -> HashMap<CFLNodeIndex, CFLNodeIndex> {
     let mut collapsed_nodes = HashMap::new();
-    for (idx, node) in nodes_info.iter().enumerate() {
-        let idx = idx as CFLNodeIndex;
+    for node in nodes_info.iter() {
         if node.incoming.len() != 1
             && node.outcoming.len() == 1
             && node.outcoming[0].symbol.is_none()

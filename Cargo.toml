@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0"
 regex = "1.10"
 walkdir = "2.3"
 thiserror = "1.0"
 crossterm = "0.29.0"
 rayon = "1.11.0"
-clap = "4.6.0"
+clap = { version = "4.5.49", features = ["derive"] }
+indicatif = "0.17"
 
 tree-sitter-java = "0.23.4"
 tree-sitter-python = "0.23.5"

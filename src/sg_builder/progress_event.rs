@@ -20,13 +20,7 @@ pub enum ProgressEvent {
     ResolvingScopes {
         elapsed: Duration,
     },
-    BuildingDatabase {
-        elapsed: Duration,
-    },
-    StitchingPaths {
-        elapsed: Duration,
-    },
-    Done {
+    GraphBuilt {
         elapsed: Duration,
     },
 }
@@ -66,17 +60,7 @@ impl fmt::Display for ProgressEvent {
             ProgressEvent::ResolvingScopes { elapsed } => {
                 write!(f, "[{} ms] Resolving scopes", elapsed.as_millis())
             }
-            ProgressEvent::BuildingDatabase { elapsed } => {
-                write!(
-                    f,
-                    "[{} ms] Building database of partial paths",
-                    elapsed.as_millis()
-                )
-            }
-            ProgressEvent::StitchingPaths { elapsed } => {
-                write!(f, "[{} ms] Stitching paths", elapsed.as_millis())
-            }
-            ProgressEvent::Done { elapsed } => {
+            ProgressEvent::GraphBuilt { elapsed } => {
                 write!(f, "[{} ms] SGGraph built successfully", elapsed.as_millis())
             }
         }
@@ -86,7 +70,7 @@ impl fmt::Display for ProgressEvent {
 impl IOProgressEvent for ProgressEvent {
     fn is_final_state(&self) -> bool {
         match self {
-            ProgressEvent::Done { .. } => true,
+            ProgressEvent::GraphBuilt { .. } => true,
             _ => false,
         }
     }

@@ -1,9 +1,7 @@
-use crate::{
-    cfl_simplifier::simplify_graph,
-    core::{
-        CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLRule, CFLSymbol, SGEdge, SGGraph,
-        SGNode, SGNodeIndex, SGSymbol, SGSymbolIndex,
-    },
+use super::simplify_graph;
+use crate::core::{
+    CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLRule, CFLSymbol, SGEdge, SGGraph, SGNode,
+    SGNodeIndex, SGSymbol, SGSymbolIndex,
 };
 use anyhow::Result;
 use std::collections::HashMap;

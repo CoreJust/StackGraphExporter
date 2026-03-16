@@ -1,7 +1,7 @@
-use super::builder::StackGraphContext;
 use super::progress_event::ProgressEvent;
 use crate::core::{SGNode, SGNodeIndex};
 use crate::error::{Error, Result};
+use crate::sg_builder::StackGraphContext;
 use stack_graphs::partial::PartialPaths;
 use stack_graphs::stitching::{
     Appendable, Database, DatabaseCandidates, ForwardPartialPathStitcher, StitcherConfig,
@@ -19,17 +19,30 @@ pub struct ResolvedDefinition {
 impl StackGraphContext {
     pub fn find_reference_nodes_by_symbol(&self, name: &str) -> Vec<SGNodeIndex> {
         let mut result = Vec::new();
+        let mut defs = 0;
         for (idx, node) in self.sggraph.nodes.iter().enumerate() {
             let symbol_idx = match node {
                 SGNode::Push(s) | SGNode::PushScoped(s, _) => Some(*s),
+                SGNode::Pop(s) | SGNode::PopScoped(s) => {
+                    let sym = &self.sggraph.symbols[*s];
+                    if sym.name == name && sym.real {
+                        defs += 1;
+                    }
+                    None
+                }
                 _ => None,
             };
             if let Some(sym_idx) = symbol_idx {
-                if self.sggraph.symbols[sym_idx].name == name {
+                let sym = &self.sggraph.symbols[sym_idx];
+                if sym.name == name && sym.real {
                     result.push(idx as SGNodeIndex);
                 }
             }
         }
+        println!(
+            "Found {} refs and {defs} defs for symbol {name}",
+            result.len()
+        );
         result
     }
 
@@ -41,14 +54,18 @@ impl StackGraphContext {
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        let start = Instant::now();
         if self.database.is_none() {
+            let start = Instant::now();
             progress(ProgressEvent::BuildingDatabase {
                 elapsed: start.elapsed(),
             })?;
             self.build_database()?;
+            progress(ProgressEvent::DatabaseBuilt {
+                elapsed: start.elapsed(),
+            })?;
         }
 
+        let start = Instant::now();
         let node_id = &self.sggraph.ids[node_index as usize];
         let start_node_handle = self.node_handle_map.get(node_id).copied().ok_or_else(|| {
             Error::PathExtraction(format!(
@@ -56,6 +73,10 @@ impl StackGraphContext {
                 node_index
             ))
         })?;
+
+        if !self.stack_graph[start_node_handle].is_reference() {
+            panic!("Passed a non-reference node handle to resolve_reference");
+        }
 
         progress(ProgressEvent::StitchingPaths {
             elapsed: start.elapsed(),
@@ -71,7 +92,11 @@ impl StackGraphContext {
             vec![start_node_handle],
             stitcher_config,
             &NoCancellation,
-            |_g, _ps, p| {
+            |g, _ps, p| {
+                let node = &g[p.end_node()];
+                if !node.is_definition() {
+                    panic!("end_node was not a definition!");
+                }
                 end_nodes.insert(p.end_node());
             },
         )
@@ -100,7 +125,7 @@ impl StackGraphContext {
             })
             .collect();
 
-        progress(ProgressEvent::Done {
+        progress(ProgressEvent::PathsStitched {
             elapsed: start.elapsed(),
         })?;
         Ok(results)

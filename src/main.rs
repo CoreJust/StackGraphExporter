@@ -1,26 +1,22 @@
-mod cfl_querier;
-mod cfl_simplifier;
-mod conversion;
-mod converter;
+mod artifacts;
+mod cfl_builder;
+mod cfl_query;
 mod core;
-mod csv;
-mod dot;
 mod error;
-mod grammar_cfg;
-mod grammar_kt;
 mod io;
 mod loading;
+mod sg_builder;
+mod sg_query;
 
 use anyhow::Result;
-use conversion::{build_sggraph, ResolvedDefinition, StackGraphContext};
-use converter::convert_to_cfl;
+use artifacts::*;
+use cfl_builder::convert_to_cfl;
+use cfl_query::cflquery;
 use core::{CFLGraph, CFLNodeIndex, SGNodeIndex};
-use csv::ToCSV;
-use dot::ToDOT;
-use grammar_cfg::ToCFGGrammar;
-use grammar_kt::ToKTGrammar;
 use io::ProgressEvent as IoProgressEvent;
 use loading::{load_stack_graph, Language};
+use sg_builder::{build_sggraph, StackGraphContext};
+use sg_query::ResolvedDefinition;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -103,41 +99,59 @@ fn handle_interactive_mode(project_dir: &str, language: &str) -> Result<()> {
                 continue;
             }
 
-            // Find reference nodes for the symbol
             let refs = bundle.stack_context.find_reference_nodes_by_symbol(symbol);
-            println!(
-                "Found {} reference nodes for symbol '{}':",
-                refs.len(),
-                symbol
-            );
+            if refs.is_empty() {
+                println!("No reference nodes found for symbol '{}'.", symbol);
+                continue;
+            }
+
+            println!("Found {} occurrences:", refs.len());
             for (i, &ref_idx) in refs.iter().enumerate() {
                 let node_id = &bundle.stack_context.sggraph.ids[ref_idx as usize];
                 let file_name = node_id
                     .file
                     .and_then(|f| bundle.stack_context.sggraph.files.get(f))
                     .map(String::as_str);
-                let line = bundle
+                let line_col = bundle
                     .stack_context
-                    .sggraph
-                    .symbols
-                    .iter()
-                    .find(|s| {
-                        s.name == symbol
-                            && s.file == node_id.file
-                            && s.line == Some(node_id.local_id as usize)
-                    })
-                    .and_then(|s| s.line);
+                    .node_handle_map
+                    .get(node_id)
+                    .and_then(|&handle| bundle.stack_context.stack_graph.source_info(handle))
+                    .map(|si| {
+                        (
+                            si.span.start.line as usize,
+                            si.span.start.column.utf8_offset as usize,
+                        )
+                    });
                 println!(
-                    "  [{}] node {} at {}:{}",
+                    "  [{}] node {} at {}:{}:{}",
                     i,
                     ref_idx,
                     file_name.unwrap_or("<unknown>"),
-                    line.map(|l| l + 1).unwrap_or(0)
+                    line_col.map(|(l, _)| l + 1).unwrap_or(0),
+                    line_col.map(|(_, c)| c + 1).unwrap_or(0)
                 );
             }
 
-            // For each reference, resolve definitions
-            for &ref_idx in &refs {
+            println!("Enter the bracketed number to choose that occurrence, or `a` for all, or empty to cancel.");
+            let sel = prompt_line("select> ")?;
+            if sel.is_empty() {
+                continue;
+            }
+            let chosen_indices = if sel.eq_ignore_ascii_case("a") {
+                refs
+            } else {
+                let n = sel
+                    .parse::<usize>()
+                    .map_err(|_| anyhow::anyhow!("Invalid number"))?;
+                if n >= refs.len() {
+                    println!("Selection out of range.");
+                    continue;
+                }
+                vec![refs[n]]
+            };
+
+            for &ref_idx in &chosen_indices {
                 let defs = bundle
                     .stack_context
                     .resolve_reference(ref_idx, |event| event.print_to_stdout())?;
@@ -190,7 +204,6 @@ fn handle_ucfs_mode(project_dir: &str, language: &str) -> Result<()> {
             continue;
         }
 
-        // Display matches with file/line info
         println!("Found {} occurrences:", refs.len());
         for (i, &ref_idx) in refs.iter().enumerate() {
             let node_id = &bundle.stack_context.sggraph.ids[ref_idx as usize];
@@ -198,20 +211,24 @@ fn handle_ucfs_mode(project_dir: &str, language: &str) -> Result<()> {
                 .file
                 .and_then(|f| bundle.stack_context.sggraph.files.get(f))
                 .map(String::as_str);
-            // Find line from symbol metadata (simplified: assume first matching symbol)
-            let line = bundle
+            let line_col = bundle
                 .stack_context
-                .sggraph
-                .symbols
-                .iter()
-                .find(|s| s.name == symbol && s.file == node_id.file)
-                .and_then(|s| s.line);
+                .node_handle_map
+                .get(node_id)
+                .and_then(|&handle| bundle.stack_context.stack_graph.source_info(handle))
+                .map(|si| {
+                    (
+                        si.span.start.line as usize,
+                        si.span.start.column.utf8_offset as usize,
+                    )
+                });
             println!(
-                "  [{}] node {} at {}:{}",
+                "  [{}] node {} at {}:{}:{}",
                 i,
                 ref_idx,
                 file_name.unwrap_or("<unknown>"),
-                line.map(|l| l + 1).unwrap_or(0)
+                line_col.map(|(l, _)| l + 1).unwrap_or(0),
+                line_col.map(|(_, c)| c + 1).unwrap_or(0)
             );
         }
 
@@ -312,7 +329,7 @@ fn main() -> Result<()> {
         let project_dir = args.next().expect("Missing artifacts directory");
         let query = args.next().expect("Missing query");
         // Run CFL query using external tool – still works without paths
-        let results = cfl_querier::cflquery(&project_dir, &query, true)?;
+        let results = cflquery(&project_dir, &query, true)?;
         println!("CFL query results:");
         for path in results {
             println!("{} -> {}", path.from, path.to);

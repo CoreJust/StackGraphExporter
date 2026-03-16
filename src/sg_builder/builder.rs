@@ -107,7 +107,7 @@ where
         node_handle_map.insert(node_id, node_handle);
     }
 
-    progress(ProgressEvent::Done {
+    progress(ProgressEvent::GraphBuilt {
         elapsed: start.elapsed(),
     })?;
 

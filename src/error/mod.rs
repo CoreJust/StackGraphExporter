@@ -37,15 +37,6 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl Error {
-    pub fn io_error(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
-        Error::Io {
-            path: path.into(),
-            source,
-        }
-    }
-}
-
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::Internal(value.to_string())

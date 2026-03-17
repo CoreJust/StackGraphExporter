@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::core::{CFLEdge, CFLNodeIndex, CFLNodeMetadata, CFLSymbolIndex};
+use crate::{
+    cfl_builder::progress_event::{ProgressEvent, ProgressMonitor},
+    core::{CFLEdge, CFLNodeIndex, CFLNodeMetadata, CFLSymbolIndex},
+    error::Result,
+};
 
 #[derive(Default)]
 struct EdgeInfo {
@@ -105,14 +109,35 @@ fn reindex_nodes(
     *metadata = new_metadata;
 }
 
-pub fn simplify_graph(
+pub fn simplify_graph<F>(
     edges: &mut Vec<CFLEdge>,
     metadata: &mut HashMap<CFLNodeIndex, CFLNodeMetadata>,
     nodes_count: usize,
-) {
+    progress: &mut ProgressMonitor<F>,
+) -> Result<()>
+where
+    F: FnMut(ProgressEvent) -> Result<()>,
+{
+    progress.emit(|e| ProgressEvent::SimplifyingGraph {
+        substage: "collecting nodes info",
+        elapsed: e.elapsed,
+    })?;
     let nodes_info = collect_nodes_info(edges, nodes_count);
+    progress.emit(|e| ProgressEvent::SimplifyingGraph {
+        substage: "looking for collapsed nodes",
+        elapsed: e.elapsed,
+    })?;
     let collapsed_nodes = find_collapsed_nodes(&nodes_info);
     let new_nodes_count = nodes_count - collapsed_nodes.len();
+    progress.emit(|e| ProgressEvent::SimplifyingGraph {
+        substage: "removing edges",
+        elapsed: e.elapsed,
+    })?;
     remove_edges(edges, &collapsed_nodes);
+    progress.emit(|e| ProgressEvent::SimplifyingGraph {
+        substage: "reindexing nodes",
+        elapsed: e.elapsed,
+    })?;
     reindex_nodes(edges, metadata, new_nodes_count);
+    Ok(())
 }

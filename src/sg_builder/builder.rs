@@ -5,7 +5,7 @@ use super::resolver::resolve_push_scoped;
 use crate::core::{SGGraph, SGNodeId};
 use crate::error::Result;
 use stack_graphs::arena::Handle;
-use stack_graphs::graph::{File, Node as StackGraphNode, StackGraph};
+use stack_graphs::graph::{Node as StackGraphNode, StackGraph};
 use stack_graphs::partial::PartialPaths;
 use stack_graphs::stitching::Database;
 use std::collections::HashMap;
@@ -18,7 +18,6 @@ pub struct StackGraphContext {
     pub stack_graph: StackGraph,
     pub sggraph: SGGraph,
     pub node_handle_map: HashMap<SGNodeId, Handle<StackGraphNode>>,
-    pub file_handle_to_index: HashMap<Handle<File>, usize>,
     pub database: Option<(Database, PartialPaths)>,
 }
 
@@ -115,7 +114,6 @@ where
         stack_graph: graph,
         sggraph,
         node_handle_map,
-        file_handle_to_index,
         database: None,
     })
 }

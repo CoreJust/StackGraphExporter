@@ -6,6 +6,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::error::Result;
 
+pub struct Elapsed {
+    pub elapsed: Duration,
+}
+
+pub struct ElapsedAndCount {
+    pub current: usize,
+    pub total: usize,
+    pub elapsed: Duration,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProgressState {
     pub is_final: bool,
@@ -20,6 +30,30 @@ pub trait ProgressEvent: Display {
 
 pub struct ProgressRenderer {
     bar: ProgressBar,
+}
+
+impl ProgressState {
+    pub fn from_elapsed(elapsed: &Elapsed, is_final: bool) -> Self {
+        Self {
+            is_final,
+            elapsed: elapsed.elapsed,
+            progress: if is_final { 1.0 } else { 0.0 },
+            objects_handled: None,
+        }
+    }
+
+    pub fn from_elapsed_and_count(elapsed_and_count: &ElapsedAndCount) -> Self {
+        Self {
+            is_final: false,
+            elapsed: elapsed_and_count.elapsed,
+            progress: if elapsed_and_count.total != 0 {
+                elapsed_and_count.current as f32 / elapsed_and_count.total as f32
+            } else {
+                0.0
+            },
+            objects_handled: Some((elapsed_and_count.current, elapsed_and_count.total)),
+        }
+    }
 }
 
 impl ProgressRenderer {

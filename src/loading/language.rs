@@ -8,6 +8,7 @@ pub enum Language {
 }
 
 impl Language {
+    #[warn(dead_code)] // Preserved for future use
     pub fn from_str(name: &str) -> Result<Self> {
         match name {
             "py" | "python" => Ok(Language::Python),

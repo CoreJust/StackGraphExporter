@@ -47,11 +47,7 @@ impl StackGraphContext {
         result
     }
 
-    pub fn resolve_reference<F>(
-        &mut self,
-        node_index: SGNodeIndex,
-        mut progress: F,
-    ) -> Result<Vec<ResolvedDefinition>>
+    pub fn database<F>(&mut self, mut progress: F) -> Result<&Database>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
@@ -65,7 +61,18 @@ impl StackGraphContext {
                 elapsed: start.elapsed(),
             })?;
         }
+        Ok(&self.database.as_ref().unwrap().0)
+    }
 
+    pub fn resolve_reference<F>(
+        &mut self,
+        node_index: SGNodeIndex,
+        mut progress: F,
+    ) -> Result<Vec<ResolvedDefinition>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        let _ = self.database(&mut progress)?;
         let start = Instant::now();
         let node_id = &self.sggraph.ids[node_index as usize];
         let start_node_handle = self.node_handle_map.get(node_id).copied().ok_or_else(|| {

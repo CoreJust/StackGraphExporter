@@ -35,12 +35,6 @@ pub struct SGEdge {
     pub to: SGNodeIndex,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SGPath {
-    pub from: SGNodeIndex,
-    pub to: SGNodeIndex,
-}
-
 #[derive(Debug)]
 pub struct SGGraph {
     pub nodes: Vec<SGNode>,

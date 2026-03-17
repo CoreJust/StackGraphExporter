@@ -12,10 +12,6 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Open(args) => run_open(args),
-        Commands::Help => {
-            crate::warn!("Use --help for usage information.");
-            Ok(())
-        }
     }
 }
 

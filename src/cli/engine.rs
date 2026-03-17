@@ -30,7 +30,7 @@ pub struct Engine {
     language: Language,
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
-    pub query_mode: bool,
+    pub query_mode: bool, // TODO: use it or remove it
     pub verify: bool,
     pub all_symbols: bool,
     pub simplify_cfl: bool,
@@ -128,28 +128,33 @@ impl Engine {
         if self.context.is_none() {
             let graph = self.stack_graph.take().expect("StackGraph not loaded");
             let mut renderer = ProgressRenderer::new();
-            let ctx = build_sggraph(graph, |e| renderer.render(&e))?;
-
-            if let Some((db, _)) = &ctx.database {
-                for handle in db.iter_partial_paths() {
-                    let path = &db[handle];
-                    let start_node = path.start_node();
-                    let node_id_opt = ctx.node_handle_map.iter().find_map(|(id, &h)| {
-                        if h == start_node {
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(node_id) = node_id_opt {
-                        let node_idx = ctx.sggraph.ids.iter().position(|id| id == node_id).unwrap()
-                            as SGNodeIndex;
-                        self.nodes_with_partials.insert(node_idx);
+            self.context = Some(build_sggraph(graph, |e| renderer.render(&e))?);
+            let partials_starts = {
+                let mut renderer = ProgressRenderer::new();
+                let db = self
+                    .context
+                    .as_mut()
+                    .unwrap()
+                    .database(|e| renderer.render(&e))?;
+                db.iter_partial_paths()
+                    .map(|handle| db[handle].start_node())
+                    .collect::<Vec<_>>()
+            };
+            let ctx = self.context.as_ref().unwrap();
+            for start_node in partials_starts.into_iter() {
+                let node_id_opt = ctx.node_handle_map.iter().find_map(|(id, &h)| {
+                    if h == start_node {
+                        Some(id)
+                    } else {
+                        None
                     }
+                });
+                if let Some(node_id) = node_id_opt {
+                    let node_idx =
+                        ctx.sggraph.ids.iter().position(|id| id == node_id).unwrap() as SGNodeIndex;
+                    self.nodes_with_partials.insert(node_idx);
                 }
             }
-
-            self.context = Some(ctx);
         }
         Ok(self.context.as_mut().unwrap())
     }
@@ -160,7 +165,9 @@ impl Engine {
         } else {
             (self.cfl_graph, self.cfl_pop_map) = {
                 let ctx = self.ensure_context()?;
-                let (graph, pop_map) = convert_to_cfl(&ctx.sggraph, simplify)?;
+                let mut renderer = ProgressRenderer::new();
+                let (graph, pop_map) =
+                    convert_to_cfl(&ctx.sggraph, simplify, |e| renderer.render(&e))?;
                 (Some(graph), Some(pop_map))
             };
             self.cfl_graph_simplified = simplify;
@@ -346,9 +353,11 @@ impl Engine {
                 .map(String::as_str)
                 .unwrap_or("");
             format!(
-                " at {}:{} (node {})",
+                " {} at {}:{} ({}node {})",
+                meta.name,
                 file_str,
                 meta.line.unwrap_or(0) + 1,
+                if meta.is_real { "" } else { "virtual " },
                 cfl_idx,
             )
         } else {

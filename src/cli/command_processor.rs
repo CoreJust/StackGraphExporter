@@ -78,7 +78,7 @@ impl CommandProcessor {
                 self.engine.gen_kt = true;
             }
             "verify" => self.engine.verify = true,
-            "all_symbols" => self.engine.all_symbols = true,
+            "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
             "simplify" => self.engine.simplify_cfl = true,
             _ => {
                 crate::error!("Unknown feature '{}'", feature);
@@ -102,7 +102,7 @@ impl CommandProcessor {
                 self.engine.gen_kt = false;
             }
             "verify" => self.engine.verify = false,
-            "all_symbols" => self.engine.all_symbols = false,
+            "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
             "simplify" => self.engine.simplify_cfl = false,
             _ => {
                 crate::error!("Unknown feature '{}'", feature);
@@ -137,7 +137,6 @@ impl CommandProcessor {
 
     fn choose_indices_for_symbol(&mut self, symbol: &str) -> Result<Option<Vec<SGNodeIndex>>> {
         let refs = self.engine.find_reference_nodes_by_symbol(symbol)?;
-
         if refs.is_empty() {
             crate::warn!("No references found for symbol '{}'", symbol);
             return Ok(None);
@@ -181,7 +180,10 @@ impl CommandProcessor {
             let defs = self.engine.resolve_reference(node_idx)?;
             crate::info!("Node {} resolves to {} definitions:", node_idx, defs.len());
             for def in defs {
-                println!("  - {}:{} local_id {}", def.file, def.line, def.local_id);
+                println!(
+                    "  - {}:{}:{} local_id {}",
+                    def.file, def.line, def.col, def.local_id
+                );
             }
         }
 
@@ -201,7 +203,10 @@ impl CommandProcessor {
         let defs = self.engine.resolve_reference(node)?;
         crate::info!("Node {} resolves to {} definitions:", node, defs.len());
         for def in defs {
-            println!("  - {}:{} local_id {}", def.file, def.line, def.local_id);
+            println!(
+                "  - {}:{}:{} local_id {}",
+                def.file, def.line, def.col, def.local_id
+            );
         }
 
         if self.engine.kotgll_enabled {

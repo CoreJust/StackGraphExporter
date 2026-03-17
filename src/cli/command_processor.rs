@@ -176,9 +176,19 @@ impl CommandProcessor {
             return Ok(());
         }
         let indices = indices.as_ref().unwrap();
-        for &node_idx in indices {
+        let mut unresolved = Vec::new();
+        for (i, &node_idx) in indices.into_iter().enumerate() {
             let defs = self.engine.resolve_reference(node_idx)?;
-            crate::info!("Node {} resolves to {} definitions:", node_idx, defs.len());
+            if defs.is_empty() {
+                unresolved.push((i, node_idx));
+                continue;
+            }
+            crate::info!(
+                "[{}] Node {} resolves to {} definitions:",
+                i,
+                node_idx,
+                defs.len()
+            );
             for def in defs {
                 println!(
                     "  - {}:{}:{} local_id {}",
@@ -187,13 +197,26 @@ impl CommandProcessor {
             }
         }
 
+        if !unresolved.is_empty() {
+            crate::info!(
+                "Other {} nodes resolve to 0 definitions: ({})",
+                unresolved.len(),
+                unresolved
+                    .into_iter()
+                    .map(|(i, node_idx)| format!("[{i}] {node_idx}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
         if self.engine.kotgll_enabled {
             self.engine.kotgll_query(symbol)?;
         }
         if self.engine.ucfs_enabled {
             let indices_u32: Vec<u32> = indices.into_iter().map(|i| *i as u32).collect();
-            let dot_path = self.engine.generate_ucfs_query(symbol, &indices_u32)?;
+            let (dot_path, grammar_path) = self.engine.generate_ucfs_query(symbol, &indices_u32)?;
             crate::info!("UCFS query DOT generated at {}", dot_path.display());
+            crate::info!("UCFS query grammar generated at {}", grammar_path.display());
         }
 
         Ok(())
@@ -214,10 +237,11 @@ impl CommandProcessor {
         }
         if self.engine.ucfs_enabled {
             let indices_u32 = vec![node as u32];
-            let dot_path = self
+            let (dot_path, grammar_path) = self
                 .engine
                 .generate_ucfs_query("node_query", &indices_u32)?;
             crate::info!("UCFS query DOT generated at {}", dot_path.display());
+            crate::info!("UCFS query grammar generated at {}", grammar_path.display());
         }
         Ok(())
     }

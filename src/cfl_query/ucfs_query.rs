@@ -5,7 +5,11 @@ use std::fs::{read_to_string, write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-fn prepare_symbol_query_grammar(grammar_path: &Path, symbol: &str) -> Result<()> {
+fn prepare_symbol_query_grammar(
+    grammar_path: &Path,
+    symbol: &str,
+    query_grammar_path: &PathBuf,
+) -> Result<()> {
     let content = read_to_string(grammar_path)?;
 
     // Find the start nonterminal (the one marked with .asStart())
@@ -40,7 +44,6 @@ fn prepare_symbol_query_grammar(grammar_path: &Path, symbol: &str) -> Result<()>
             start = start_name
         );
         let new_content = format!("{}{}{}", head, q_decl, tail);
-        let query_grammar_path = grammar_path.with_file_name(".cfl_query.kt");
         write(&query_grammar_path, new_content)?;
         Ok(())
     } else {
@@ -50,7 +53,7 @@ fn prepare_symbol_query_grammar(grammar_path: &Path, symbol: &str) -> Result<()>
     }
 }
 
-fn modify_dot_file(dot_path: &Path, indices: &[u32], output_path: &Path) -> Result<()> {
+fn modify_dot_file(dot_path: &Path, indices: &[u32], query_dot_path: &Path) -> Result<()> {
     let orig_dot = read_to_string(dot_path)?;
 
     let mut start_fragment = String::new();
@@ -82,7 +85,7 @@ fn modify_dot_file(dot_path: &Path, indices: &[u32], output_path: &Path) -> Resu
         new_dot
     };
 
-    write(output_path, new_dot)?;
+    write(query_dot_path, new_dot)?;
     Ok(())
 }
 
@@ -93,7 +96,7 @@ pub fn ucfs_query<F>(
     symbol: &str,
     indices: &[u32],
     mut progress: F,
-) -> Result<PathBuf>
+) -> Result<(PathBuf, PathBuf)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
@@ -102,17 +105,20 @@ where
     progress(ProgressEvent::PreparingQueryGrammar {
         elapsed: start.elapsed(),
     })?;
-    prepare_symbol_query_grammar(grammar_path, symbol)?;
+    let query_grammar_path = grammar_path
+        .with_file_name("UCFSGrammar")
+        .with_extension("kt");
+    prepare_symbol_query_grammar(grammar_path, symbol, &query_grammar_path)?;
 
     progress(ProgressEvent::ModifyingDot {
         elapsed: start.elapsed(),
     })?;
-    let ucfs_dot_path = output_dir.join("cfl_ucfs.dot");
-    modify_dot_file(dot_path, indices, &ucfs_dot_path)?;
+    let query_dot_path = output_dir.join("query").with_extension("cfl_ucfs.dot");
+    modify_dot_file(dot_path, indices, &query_dot_path)?;
 
     progress(ProgressEvent::UcfsDone {
         elapsed: start.elapsed(),
     })?;
 
-    Ok(ucfs_dot_path)
+    Ok((query_dot_path, query_grammar_path))
 }

@@ -57,7 +57,7 @@ impl ProgressState {
 }
 
 impl ProgressRenderer {
-    pub fn new() -> Self {
+    fn make_progress_bar() -> ProgressBar {
         let bar = ProgressBar::new(100);
         bar.set_style(
             ProgressStyle::default_bar()
@@ -65,33 +65,36 @@ impl ProgressRenderer {
                 .unwrap()
                 .progress_chars("#>-"),
         );
-        Self { bar }
+        bar
+    }
+
+    pub fn new() -> Self {
+        Self {
+            bar: Self::make_progress_bar(),
+        }
     }
 
     pub fn render<E: ProgressEvent>(&mut self, event: &E) -> Result<()> {
         let state = event.state();
 
-        let elapsed_str = format!(
-            "[{:02}:{:02}]",
-            state.elapsed.as_secs() / 60,
-            state.elapsed.as_secs() % 60
-        );
+        let elapsed_str = format!("[{}ms]", state.elapsed.as_millis());
         let elapsed_colored = style(elapsed_str).with(Color::Cyan);
 
         let objects_str = if let Some((cur, total)) = state.objects_handled {
-            style(format!("[{}/{}]", cur, total))
+            style(format!(" [{}/{}]", cur, total))
                 .with(Color::Yellow)
                 .to_string()
         } else {
             String::new()
         };
 
-        let message = format!("{} {} {}", elapsed_colored, objects_str, event);
+        let message = format!("{}{} {}", elapsed_colored, objects_str, event);
         let pos = (state.progress * 100.0) as u64;
         self.bar.set_position(pos);
 
         if state.is_final {
             self.bar.finish_with_message(message);
+            self.bar = Self::make_progress_bar();
         } else {
             self.bar.set_message(message);
         }

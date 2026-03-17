@@ -1,13 +1,17 @@
 use super::progress_event::ProgressEvent;
 use crate::core::{SGNode, SGNodeIndex};
 use crate::error::{Error, Result};
+use crate::io::ElapsedAndCount;
 use crate::sg_builder::StackGraphContext;
 use stack_graphs::partial::PartialPaths;
 use stack_graphs::stitching::{
     Appendable, Database, DatabaseCandidates, ForwardPartialPathStitcher, StitcherConfig,
 };
 use stack_graphs::NoCancellation;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
+
+const PROGRESS_ONCE_IN: usize = 128;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedDefinition {
@@ -18,16 +22,35 @@ pub struct ResolvedDefinition {
 }
 
 impl StackGraphContext {
-    pub fn find_reference_nodes_by_symbol(&self, name: &str) -> Vec<SGNodeIndex> {
+    pub fn find_reference_nodes_by_symbol<F>(
+        &self,
+        name: &str,
+        mut progress: F,
+    ) -> Result<Vec<SGNodeIndex>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        let start = Instant::now();
         let mut result = Vec::new();
-        let mut defs = 0;
+        let mut found_defs = 0;
+        let total = self.sggraph.nodes.len();
         for (idx, node) in self.sggraph.nodes.iter().enumerate() {
+            if idx % PROGRESS_ONCE_IN == 0 {
+                progress(ProgressEvent::LookingForReferences {
+                    elapsed_and_count: ElapsedAndCount {
+                        current: idx,
+                        total,
+                        elapsed: start.elapsed(),
+                    },
+                    symbol: name,
+                })?;
+            }
             let symbol_idx = match node {
                 SGNode::Push(s) | SGNode::PushScoped(s, _) => Some(*s),
                 SGNode::Pop(s) | SGNode::PopScoped(s) => {
                     let sym = &self.sggraph.symbols[*s];
                     if sym.name == name && sym.real {
-                        defs += 1;
+                        found_defs += 1;
                     }
                     None
                 }
@@ -40,28 +63,84 @@ impl StackGraphContext {
                 }
             }
         }
-        crate::info!(
-            "Found {} refs and {defs} defs for symbol {name}",
-            result.len()
-        );
-        result
+        progress(ProgressEvent::FoundReferences {
+            elapsed: start.elapsed(),
+            symbol: name,
+            found_refs: result.len(),
+            found_defs,
+        })?;
+        Ok(result)
     }
 
-    pub fn database<F>(&mut self, mut progress: F) -> Result<&Database>
+    pub fn find_all_partial_starts<F>(&mut self, mut progress: F) -> Result<HashSet<SGNodeIndex>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        if self.database.is_none() {
-            let start = Instant::now();
-            progress(ProgressEvent::BuildingDatabase {
-                elapsed: start.elapsed(),
-            })?;
-            self.build_database()?;
-            progress(ProgressEvent::DatabaseBuilt {
-                elapsed: start.elapsed(),
-            })?;
+        let db = self.database(&mut progress)?;
+        let start = Instant::now();
+        let total = db.iter_partial_paths().count();
+        let mut partials_starts = Vec::with_capacity(total);
+        for (i, handle) in db.iter_partial_paths().enumerate() {
+            if i % PROGRESS_ONCE_IN == 0 {
+                progress(ProgressEvent::FindingPartialStarts(ElapsedAndCount {
+                    current: i,
+                    total,
+                    elapsed: start.elapsed(),
+                }))?;
+            }
+            partials_starts.push(db[handle].start_node());
         }
-        Ok(&self.database.as_ref().unwrap().0)
+
+        let total = self.sggraph.ids.len();
+        let mut sg_id_to_index = HashMap::with_capacity(total);
+        for (i, id) in self.sggraph.ids.iter().enumerate() {
+            if i % PROGRESS_ONCE_IN == 0 {
+                progress(ProgressEvent::BuildingNodeIdToPositionIndex(
+                    ElapsedAndCount {
+                        current: i,
+                        total,
+                        elapsed: start.elapsed(),
+                    },
+                ))?;
+            }
+            sg_id_to_index.insert(id, i as u32);
+        }
+
+        let total = self.node_handle_map.len();
+        let mut handle_to_sg_index = HashMap::with_capacity(total);
+        for (i, (sg_id, handle)) in self.node_handle_map.iter().enumerate() {
+            if i % PROGRESS_ONCE_IN == 0 {
+                progress(ProgressEvent::BuildingNodeHandleToPositionIndex(
+                    ElapsedAndCount {
+                        current: i,
+                        total,
+                        elapsed: start.elapsed(),
+                    },
+                ))?;
+            }
+            handle_to_sg_index.insert(handle, sg_id_to_index[&sg_id]);
+        }
+        let total = partials_starts.len();
+        let mut result = HashSet::new();
+        for (i, start_node) in partials_starts.into_iter().enumerate() {
+            if i % PROGRESS_ONCE_IN == 0 {
+                progress(ProgressEvent::CollectingNodesAtPartialStarts(
+                    ElapsedAndCount {
+                        current: i,
+                        total,
+                        elapsed: start.elapsed(),
+                    },
+                ))?;
+            }
+            let node_idx_opt = handle_to_sg_index.get(&start_node);
+            if let Some(node_idx) = node_idx_opt {
+                result.insert(*node_idx);
+            }
+        }
+        progress(ProgressEvent::NodesAtPartialStartsIndexed {
+            elapsed: start.elapsed(),
+        })?;
+        Ok(result)
     }
 
     pub fn resolve_reference<F>(
@@ -145,30 +224,46 @@ impl StackGraphContext {
         Ok(results)
     }
 
-    fn build_database(&mut self) -> Result<()> {
-        let mut db = Database::new();
-        let mut partials = PartialPaths::new();
-        let stitcher_config = StitcherConfig::default()
-            .with_detect_similar_paths(true)
-            .with_collect_stats(false);
+    fn database<F>(&mut self, mut progress: F) -> Result<&Database>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        if self.database.is_none() {
+            let start = Instant::now();
+            let mut db = Database::new();
+            let mut partials = PartialPaths::new();
+            let stitcher_config = StitcherConfig::default()
+                .with_detect_similar_paths(true)
+                .with_collect_stats(false);
 
-        for file_handle in self.stack_graph.iter_files() {
-            ForwardPartialPathStitcher::find_minimal_partial_path_set_in_file(
-                &self.stack_graph,
-                &mut partials,
-                file_handle,
-                stitcher_config,
-                &NoCancellation,
-                |_g, ps, p| {
-                    db.add_partial_path(&self.stack_graph, ps, p.clone());
-                },
-            )
-            .map_err(|e| {
-                Error::PathExtraction(format!("Failed to build database for file: {}", e))
+            let total = self.sggraph.files.len(); // Same as in stack_graph
+            for (i, file_handle) in self.stack_graph.iter_files().enumerate() {
+                progress(ProgressEvent::BuildingDatabase(ElapsedAndCount {
+                    current: i,
+                    total,
+                    elapsed: start.elapsed(),
+                }))?;
+                ForwardPartialPathStitcher::find_minimal_partial_path_set_in_file(
+                    &self.stack_graph,
+                    &mut partials,
+                    file_handle,
+                    stitcher_config,
+                    &NoCancellation,
+                    |_g, ps, p| {
+                        db.add_partial_path(&self.stack_graph, ps, p.clone());
+                    },
+                )
+                .map_err(|e| {
+                    Error::PathExtraction(format!("Failed to build database for file: {}", e))
+                })?;
+            }
+
+            progress(ProgressEvent::DatabaseBuilt {
+                elapsed: start.elapsed(),
             })?;
-        }
 
-        self.database = Some((db, partials));
-        Ok(())
+            self.database = Some((db, partials));
+        }
+        Ok(&self.database.as_ref().unwrap().0)
     }
 }

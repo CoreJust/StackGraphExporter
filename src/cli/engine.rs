@@ -128,33 +128,9 @@ impl Engine {
         if self.context.is_none() {
             let graph = self.stack_graph.take().expect("StackGraph not loaded");
             let mut renderer = ProgressRenderer::new();
-            self.context = Some(build_sggraph(graph, |e| renderer.render(&e))?);
-            let partials_starts = {
-                let mut renderer = ProgressRenderer::new();
-                let db = self
-                    .context
-                    .as_mut()
-                    .unwrap()
-                    .database(|e| renderer.render(&e))?;
-                db.iter_partial_paths()
-                    .map(|handle| db[handle].start_node())
-                    .collect::<Vec<_>>()
-            };
-            let ctx = self.context.as_ref().unwrap();
-            for start_node in partials_starts.into_iter() {
-                let node_id_opt = ctx.node_handle_map.iter().find_map(|(id, &h)| {
-                    if h == start_node {
-                        Some(id)
-                    } else {
-                        None
-                    }
-                });
-                if let Some(node_id) = node_id_opt {
-                    let node_idx =
-                        ctx.sggraph.ids.iter().position(|id| id == node_id).unwrap() as SGNodeIndex;
-                    self.nodes_with_partials.insert(node_idx);
-                }
-            }
+            let mut ctx = build_sggraph(graph, |e| renderer.render(&e))?;
+            self.nodes_with_partials = ctx.find_all_partial_starts(|e| renderer.render(&e))?;
+            self.context = Some(ctx);
         }
         Ok(self.context.as_mut().unwrap())
     }
@@ -177,7 +153,8 @@ impl Engine {
 
     pub fn find_reference_nodes_by_symbol(&mut self, symbol: &str) -> Result<Vec<SGNodeIndex>> {
         let ctx = self.ensure_context()?;
-        let refs = ctx.find_reference_nodes_by_symbol(symbol);
+        let mut renderer = ProgressRenderer::new();
+        let refs = ctx.find_reference_nodes_by_symbol(symbol, |e| renderer.render(&e))?;
         if !self.all_symbols {
             Ok(refs
                 .into_iter()
@@ -210,7 +187,8 @@ impl Engine {
 
     pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<Vec<ResolvedDefinition>> {
         let ctx = self.ensure_context()?;
-        ctx.resolve_reference(node_idx, |_| Ok(()))
+        let mut renderer = ProgressRenderer::new();
+        ctx.resolve_reference(node_idx, |e| renderer.render(&e))
     }
 
     fn sg_index_from_def(&self, def: &ResolvedDefinition) -> Option<SGNodeIndex> {
@@ -293,12 +271,17 @@ impl Engine {
             |e| renderer.render(&e),
         )?;
         if self.verify {
+            let mut renderer = ProgressRenderer::new();
+            // TODO: pass references already acquired in the command_processor here
             let refs = self
                 .ensure_context()?
-                .find_reference_nodes_by_symbol(symbol);
+                .find_reference_nodes_by_symbol(symbol, |e| renderer.render(&e))?;
             let mut stack_defs = HashSet::new();
             for &r in &refs {
-                let defs = self.ensure_context()?.resolve_reference(r, |_| Ok(()))?;
+                let mut renderer = ProgressRenderer::new();
+                let defs = self
+                    .ensure_context()?
+                    .resolve_reference(r, |e| renderer.render(&e))?;
                 for d in defs {
                     if let Some(sg_idx) = self.sg_index_from_def(&d) {
                         if let Some(cfl_idx) =
@@ -365,7 +348,11 @@ impl Engine {
         }
     }
 
-    pub fn generate_ucfs_query(&mut self, symbol: &str, indices: &[u32]) -> Result<PathBuf> {
+    pub fn generate_ucfs_query(
+        &mut self,
+        symbol: &str,
+        indices: &[u32],
+    ) -> Result<(PathBuf, PathBuf)> {
         if !self.ucfs_enabled {
             return Err(Error::Internal("UCFS backend not enabled".into()));
         }
@@ -447,12 +434,12 @@ impl Engine {
             overridden.clone()
         } else {
             let filename = match artifact {
-                ArtifactType::Cfg => ".cfl_grammar.cfg",
-                ArtifactType::Csv => ".cfl.csv",
-                ArtifactType::Dot => ".stackgraph.dot",
-                ArtifactType::DotUcfs => ".cfl_ucfs.dot",
-                ArtifactType::Kt => ".cfl_grammar.kt",
-                ArtifactType::Json => ".stackgraph.json",
+                ArtifactType::Cfg => "cfl_grammar.cfg",
+                ArtifactType::Csv => "cfl.csv",
+                ArtifactType::Dot => "stackgraph.dot",
+                ArtifactType::DotUcfs => "cfl_ucfs.dot",
+                ArtifactType::Kt => "UCFSGrammar.kt",
+                ArtifactType::Json => "stackgraph.json",
             };
             self.output_dir.join(filename)
         }

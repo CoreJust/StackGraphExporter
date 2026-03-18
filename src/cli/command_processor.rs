@@ -126,8 +126,8 @@ impl CommandProcessor {
 
     fn cmd_create(&mut self, artifact: Option<ArtifactType>) -> Result<()> {
         if let Some(art) = artifact {
-            self.engine.generate_artifact(art)?;
-            crate::success!("Generated {:?}", art);
+            let path = self.engine.generate_artifact(art)?;
+            crate::success!("Generated {art:?} at {}", path.display());
         } else {
             self.engine.generate_artifacts()?;
             crate::success!("Generated all enabled artifacts");
@@ -261,14 +261,14 @@ impl CommandProcessor {
     fn cmd_help(&self) -> Result<()> {
         crate::info!("Available commands:");
         crate::info!("  open <path>");
-        crate::info!("  enable <feature>");
-        crate::info!("  disable <feature>");
-        crate::info!("  output [artifact] <path>");
-        crate::info!("  create <artifact>");
-        crate::info!("  query <symbol>");
-        crate::info!("  state");
-        crate::info!("  help");
-        crate::info!("  exit");
+        crate::info!("  enable <feature> (alternative: e)");
+        crate::info!("  disable <feature> (alternative: d)");
+        crate::info!("  output [artifact] <path> (alternative: o)");
+        crate::info!("  create <artifact> (alternative: c)");
+        crate::info!("  query <symbol> (alternative: q, r, run)");
+        crate::info!("  state (alternative: s)");
+        crate::info!("  help (alternative: h)");
+        crate::info!("  exit (alternative: quit, halt)");
         Ok(())
     }
 

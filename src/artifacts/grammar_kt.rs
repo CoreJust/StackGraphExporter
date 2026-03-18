@@ -1,6 +1,9 @@
-use crate::core::{CFLGraph, CFLSymbol};
-use crate::error::Result;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use crate::{
+    artifacts::grammar_kt_pieces::*,
+    core::{CFLGraph, CFLSymbol},
+    error::Result,
+};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -10,7 +13,8 @@ pub trait ToKTGrammar {
 
     fn write_to_kotlin_file(&self, out_path: &PathBuf, class_name: &str) -> Result<()> {
         let mut file = File::create(out_path)?;
-        for line in self.to_kotlin_lines(class_name).into_iter() {
+        let kt = self.to_kotlin_lines(class_name);
+        for line in kt {
             writeln!(file, "{}", line)?;
         }
         Ok(())
@@ -19,129 +23,204 @@ pub trait ToKTGrammar {
 
 impl ToKTGrammar for CFLGraph {
     fn to_kotlin_lines(&self, class_name: &str) -> Vec<String> {
-        fn sanitize_ident(s: &str, fallback_idx: usize) -> String {
-            let mut out = String::with_capacity(s.len());
-            for (i, ch) in s.chars().enumerate() {
-                if (i == 0 && (ch.is_ascii_alphabetic() || ch == '_'))
-                    || (i > 0 && (ch.is_ascii_alphanumeric() || ch == '_'))
-                {
-                    out.push(ch);
-                } else {
-                    out.push('_');
+        KotlinGrammarGenerator::new(self, class_name).generate()
+    }
+}
+
+struct KotlinGrammarGenerator<'a> {
+    graph: &'a CFLGraph,
+    class_name: &'a str,
+}
+
+impl<'a> KotlinGrammarGenerator<'a> {
+    fn new(graph: &'a CFLGraph, class_name: &'a str) -> Self {
+        Self { graph, class_name }
+    }
+
+    fn generate(&self) -> Vec<String> {
+        let non_terminal_indices = self.collect_non_terminal_indices();
+        let name_map = self.build_name_map(&non_terminal_indices);
+        let start_index = self.find_start_index(&non_terminal_indices);
+        let productions = self.collect_productions();
+        let mut kt_lines = vec![KT_GRAMMAR_HEADER.to_string()];
+        self.append_class_declaration(&mut kt_lines);
+        Self::append_non_terminal_declarations(&mut kt_lines, &name_map, start_index);
+        self.append_helper_functions(&mut kt_lines, &name_map);
+        self.append_init_block(&mut kt_lines, &productions, &name_map);
+
+        kt_lines.push("}".to_string());
+        kt_lines
+    }
+
+    fn collect_non_terminal_indices(&self) -> BTreeSet<usize> {
+        let mut indices = BTreeSet::new();
+        for rule in &self.graph.rules {
+            indices.insert(rule.from_non_terminal);
+            for symbol in &rule.to {
+                if let CFLSymbol::NonTerminal(nt) = symbol {
+                    indices.insert(*nt);
                 }
             }
-            if out.is_empty() {
-                out = format!("NT_{}", fallback_idx);
-            }
-            if out.chars().next().unwrap().is_ascii_digit() {
-                out = format!("_{}", out);
-            }
-            out
         }
+        if indices.is_empty() && !self.graph.symbols.is_empty() {
+            indices.insert(0);
+        }
+        indices
+    }
 
-        let mut nt_indices: BTreeMap<usize, ()> = BTreeMap::new();
-        for r in &self.rules {
-            nt_indices.insert(r.from_non_terminal, ());
-            for sym in &r.to {
-                if let CFLSymbol::NonTerminal(i) = sym {
-                    nt_indices.insert(*i, ());
-                }
-            }
-        }
-        if nt_indices.is_empty() && !self.symbols.is_empty() {
-            nt_indices.insert(0usize, ());
-        }
+    fn build_name_map(&self, indices: &BTreeSet<usize>) -> HashMap<usize, String> {
+        let mut name_map = HashMap::new();
+        let mut used_names = HashSet::new();
 
-        let mut name_map: HashMap<usize, String> = HashMap::new();
-        let mut used_names: HashSet<String> = HashSet::new();
-        for &idx in nt_indices.keys() {
-            let raw = &self.symbols[idx];
-            let mut candidate = sanitize_ident(raw, idx);
-            let mut suffix = 1usize;
+        for &idx in indices {
+            let raw_name = &self.graph.symbols[idx];
+            let mut candidate = Self::sanitize_ident(raw_name, idx);
+            let mut suffix = 1;
             while used_names.contains(&candidate) {
-                candidate = format!("{}_{}", candidate, suffix);
+                candidate = format!("{}_{}", Self::sanitize_ident(raw_name, idx), suffix);
                 suffix += 1;
             }
             used_names.insert(candidate.clone());
             name_map.insert(idx, candidate);
         }
+        name_map
+    }
 
-        let mut found_start: Option<usize> = None;
-        for &k in nt_indices.keys() {
-            if self.symbols[k] == "S" {
-                found_start = Some(k);
-                break;
-            }
-        }
-        let start_idx = found_start.unwrap_or_else(|| *nt_indices.keys().next().unwrap());
-
-        let mut prods: BTreeMap<usize, Vec<Vec<CFLSymbol>>> = BTreeMap::new();
-        for r in &self.rules {
-            prods
-                .entry(r.from_non_terminal)
-                .or_default()
-                .push(r.to.clone());
-        }
-
-        let mut lines: Vec<String> = Vec::new();
-        lines.push("package sg_bench\n".to_string());
-        lines.push("import org.ucfs.grammar.combinator.Grammar".to_string());
-        lines.push("import org.ucfs.grammar.combinator.regexp.*".to_string());
-        lines.push("import org.ucfs.rsm.symbol.Term".to_string());
-        lines.push("".to_string());
-
-        lines.push(format!("class {} : Grammar() {{", class_name));
-        lines.push("".to_string());
-
-        for (idx, _) in nt_indices.iter() {
-            let var = &name_map[idx];
-            if *idx == start_idx {
-                lines.push(format!("    val {} by Nt().asStart()", var));
+    fn sanitize_ident(s: &str, fallback_idx: usize) -> String {
+        let mut out = String::with_capacity(s.len());
+        for (i, ch) in s.chars().enumerate() {
+            let valid = if i == 0 {
+                ch.is_ascii_alphabetic() || ch == '_'
             } else {
-                lines.push(format!("    val {} by Nt()", var));
+                ch.is_ascii_alphanumeric() || ch == '_'
+            };
+            out.push(if valid { ch } else { '_' });
+        }
+        if out.is_empty() {
+            out = format!("NT_{}", fallback_idx);
+        }
+        if out.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            out.insert(0, '_');
+        }
+        out
+    }
+
+    fn find_start_index(&self, indices: &BTreeSet<usize>) -> usize {
+        indices
+            .iter()
+            .find(|&&idx| self.graph.symbols[idx] == "S")
+            .copied()
+            .unwrap_or_else(|| *indices.first().unwrap())
+    }
+
+    fn collect_productions(&self) -> BTreeMap<usize, Vec<Vec<CFLSymbol>>> {
+        let mut productions = BTreeMap::new();
+        for rule in &self.graph.rules {
+            productions
+                .entry(rule.from_non_terminal)
+                .or_insert_with(Vec::new)
+                .push(rule.to.clone());
+        }
+        productions
+    }
+
+    fn append_class_declaration(&self, kt_lines: &mut Vec<String>) {
+        kt_lines.push(format!("class {} : Grammar() {{\n", self.class_name));
+    }
+
+    fn append_non_terminal_declarations(
+        kt_lines: &mut Vec<String>,
+        name_map: &HashMap<usize, String>,
+        start_index: usize,
+    ) {
+        let mut indices: Vec<_> = name_map.keys().copied().collect();
+        indices.sort();
+        for idx in indices {
+            let var_name = &name_map[&idx];
+            if idx == start_index {
+                kt_lines.push(format!("\tval {} by Nt().asStart()", var_name));
+            } else {
+                kt_lines.push(format!("\tval {} by Nt()", var_name));
             }
         }
-        lines.push("".to_string());
+        kt_lines.push("".to_string());
+    }
 
-        lines.push("    init {".to_string());
-        for (lhs_idx, alt_list) in prods.iter() {
-            let lhs_var = &name_map[lhs_idx];
-            let mut alt_exprs: HashSet<String> = HashSet::new();
-            for rhs in alt_list.iter() {
+    fn append_helper_functions(
+        &self,
+        kt_lines: &mut Vec<String>,
+        name_map: &HashMap<usize, String>,
+    ) {
+        kt_lines.push(KT_GRAMMAR_PARSE_PRODUCTION_DATA.to_string());
+
+        let mut indices: Vec<_> = name_map.keys().copied().collect();
+        indices.sort();
+        kt_lines.push(kt_grammar_get_nt(
+            indices
+                .into_iter()
+                .map(|idx| &name_map[&idx])
+                .collect::<Vec<_>>(),
+        ));
+    }
+
+    fn append_init_block(
+        &self,
+        kt_lines: &mut Vec<String>,
+        productions: &BTreeMap<usize, Vec<Vec<CFLSymbol>>>,
+        name_map: &HashMap<usize, String>,
+    ) {
+        kt_lines.push("\tinit {".to_string());
+
+        kt_lines.push("\t\tval productionData = \"\"\"".to_string());
+        self.append_production_data(kt_lines, productions, name_map);
+        kt_lines.push("\t\t\"\"\".trimIndent()\n".to_string());
+
+        let nt_names: Vec<String> = name_map.values().cloned().collect();
+        kt_lines.push(kt_grammar_productions_map_build(nt_names));
+        kt_lines.push("\t}".to_string());
+    }
+
+    fn append_production_data(
+        &self,
+        kt_lines: &mut Vec<String>,
+        productions: &BTreeMap<usize, Vec<Vec<CFLSymbol>>>,
+        name_map: &HashMap<usize, String>,
+    ) {
+        for (&lhs_idx, alternatives) in productions {
+            let lhs_name = &name_map[&lhs_idx];
+            kt_lines.push(lhs_name.clone());
+
+            let mut unique_alts = std::collections::HashSet::new();
+            for rhs in alternatives {
                 if rhs.is_empty() {
-                    alt_exprs.insert("Epsilon".to_string());
+                    unique_alts.insert("Epsilon".to_string());
                     continue;
                 }
-                let mut parts: Vec<String> = Vec::new();
-                for sym in rhs.iter() {
-                    match sym {
-                        CFLSymbol::Terminal(i) => {
-                            let raw = &self.symbols[*i];
-                            let esc = raw.replace('\\', "\\\\").replace('"', "\\\"");
-                            parts.push(format!("Term(\"{}\")", esc));
-                        }
-                        CFLSymbol::NonTerminal(i) => {
-                            let name = name_map.get(i).expect("nonterminal mapping missing");
-                            parts.push(name.clone());
-                        }
-                    }
+                let mut tokens = Vec::with_capacity(rhs.len());
+                for sym in rhs {
+                    tokens.push(self.format_symbol(sym, name_map));
                 }
-                alt_exprs.insert(parts.join(" * "));
+                unique_alts.insert(tokens.join(" "));
             }
 
-            let alt_exprs = alt_exprs.into_iter().collect::<Vec<_>>();
-            let rhs_text = alt_exprs.join(", ");
-            lines.push(format!(
-                "      val {}_production = listOf({})",
-                lhs_var, rhs_text
-            ));
-            lines.push(format!(
-                "        {} /= Term(\"\") * S or S * Term(\"\") or {}_production.reduce {{ acc, prod -> acc or prod }}",
-                lhs_var, lhs_var
-            ));
+            let mut sorted_alts: Vec<_> = unique_alts.into_iter().collect();
+            sorted_alts.sort();
+
+            for alt in sorted_alts {
+                kt_lines.push(format!("\t{}", alt));
+            }
+            kt_lines.push(String::new());
         }
-        lines.push("    }".to_string());
-        lines.push("}".to_string());
-        lines
+    }
+
+    fn format_symbol(&self, symbol: &CFLSymbol, name_map: &HashMap<usize, String>) -> String {
+        match symbol {
+            CFLSymbol::Terminal(idx) => {
+                let raw = &self.graph.symbols[*idx];
+                let escaped = raw.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{}\"", escaped)
+            }
+            CFLSymbol::NonTerminal(idx) => name_map[idx].clone(),
+        }
     }
 }

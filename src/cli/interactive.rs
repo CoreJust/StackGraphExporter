@@ -19,10 +19,10 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                 processor.process(Command::Exit)?;
                 break;
             }
-            "help" => {
+            "help" | "h" => {
                 processor.process(Command::Help)?;
             }
-            "create" => {
+            "create" | "c" => {
                 if parts.len() > 2 {
                     crate::error!("Usage: create <artifact>");
                     continue;

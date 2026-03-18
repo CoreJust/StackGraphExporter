@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use tree_sitter_stack_graphs::StackGraphLanguage;
 
 #[derive(Debug, Clone, Copy)]

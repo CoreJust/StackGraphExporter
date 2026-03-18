@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use stack_graphs::stitching::Appendable;
-
 use crate::{
     artifacts::*,
     cfl_builder::convert_to_cfl,
@@ -30,7 +28,6 @@ pub struct Engine {
     language: Language,
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
-    pub query_mode: bool, // TODO: use it or remove it
     pub verify: bool,
     pub all_symbols: bool,
     pub simplify_cfl: bool,
@@ -68,7 +65,7 @@ impl Engine {
         if let Some(p) = args.output_csv {
             overrides.insert(ArtifactType::Csv, p);
         }
-        if let Some(p) = args.output_dot {
+        if let Some(p) = args.output_stack_graph_dot {
             overrides.insert(ArtifactType::Dot, p);
         }
         if let Some(p) = args.output_dot_ucfs {
@@ -86,7 +83,6 @@ impl Engine {
             language,
             kotgll_enabled: args.kotgll,
             ucfs_enabled: args.ucfs,
-            query_mode: args.query,
             verify: args.verify,
             all_symbols: args.all_symbols,
             simplify_cfl: args.simplify_cfl,
@@ -94,7 +90,7 @@ impl Engine {
             verbose: args.verbose,
             gen_cfg: args.cfg,
             gen_csv: args.csv,
-            gen_dot: args.dot,
+            gen_dot: args.stack_graph_dot,
             gen_dot_ucfs: args.dot_ucfs,
             gen_kt: args.kt,
             gen_json: args.stack_graph_json,
@@ -379,7 +375,7 @@ impl Engine {
         )
     }
 
-    pub fn generate_artifact(&mut self, artifact: ArtifactType) -> Result<()> {
+    pub fn generate_artifact(&mut self, artifact: ArtifactType) -> Result<PathBuf> {
         let path = self.output_path(artifact);
         self.generated_artifacts.insert(artifact, path.clone());
         match artifact {
@@ -409,7 +405,7 @@ impl Engine {
                 std::fs::write(&path, json)?;
             }
         }
-        Ok(())
+        Ok(path)
     }
 
     pub fn generate_artifacts(&mut self) -> Result<()> {
@@ -423,7 +419,8 @@ impl Engine {
         ];
         for (enabled, artifact) in artifacts {
             if enabled {
-                self.generate_artifact(artifact)?;
+                let path = self.generate_artifact(artifact)?;
+                crate::success!("Generated {artifact:?} at {}", path.display());
             }
         }
         Ok(())

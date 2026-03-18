@@ -30,8 +30,6 @@ pub struct OpenArgs {
     #[arg(long)]
     pub ucfs: bool,
 
-    #[arg(short, long)]
-    pub query: bool,
     #[arg(long)]
     pub verify: bool,
     #[arg(short, long)]
@@ -55,13 +53,13 @@ pub struct OpenArgs {
     pub cfg: bool,
     #[arg(long)]
     pub csv: bool,
-    #[arg(long)]
-    pub dot: bool,
+    #[arg(long, alias = "sg-dot")]
+    pub stack_graph_dot: bool,
     #[arg(long)]
     pub dot_ucfs: bool,
     #[arg(long)]
     pub kt: bool,
-    #[arg(long, alias = "sg-json", alias = "json")]
+    #[arg(long, alias = "sg-json")]
     pub stack_graph_json: bool,
 
     // Output paths
@@ -71,13 +69,13 @@ pub struct OpenArgs {
     pub output_cfg: Option<PathBuf>,
     #[arg(long)]
     pub output_csv: Option<PathBuf>,
-    #[arg(long)]
-    pub output_dot: Option<PathBuf>,
+    #[arg(long, alias = "output-sg-dot")]
+    pub output_stack_graph_dot: Option<PathBuf>,
     #[arg(long)]
     pub output_dot_ucfs: Option<PathBuf>,
     #[arg(long)]
     pub output_kt: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, alias = "output-sg-json")]
     pub output_stack_graph_json: Option<PathBuf>,
 
     // Immediate queries

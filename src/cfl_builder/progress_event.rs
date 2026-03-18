@@ -91,7 +91,7 @@ impl fmt::Display for ProgressEvent {
                 write!(f, "Simplifying CFL graph: {substage}")
             }
             ProgressEvent::Done { .. } => {
-                write!(f, "CFL graph build successfully")
+                write!(f, "CFL graph built successfully")
             }
         }
     }

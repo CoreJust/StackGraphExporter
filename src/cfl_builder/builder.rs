@@ -197,7 +197,7 @@ where
 pub fn convert_to_cfl<F>(
     sggraph: &SGGraph,
     simplify: bool,
-    mut progress: F,
+    progress: F,
 ) -> Result<(CFLGraph, HashMap<SGNodeIndex, CFLNodeIndex>)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
@@ -239,5 +239,6 @@ where
         files: sggraph.files.clone(),
     };
 
+    progress_monitor.emit(|e| ProgressEvent::Done(e))?;
     Ok((cfl_graph, pop_sg_to_cfl_out))
 }

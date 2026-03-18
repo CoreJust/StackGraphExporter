@@ -66,7 +66,7 @@ impl<'a> fmt::Display for ProgressEvent<'a> {
                 found_refs,
                 ..
             } => {
-                write!(f, "Found for {found_refs} references and {found_defs} definitions for symbol '{symbol}'")
+                write!(f, "Found {found_refs} references and {found_defs} definitions for symbol '{symbol}'")
             }
             ProgressEvent::StitchingPaths { .. } => {
                 write!(f, "Stitching paths")

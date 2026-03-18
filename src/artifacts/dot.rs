@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
@@ -7,9 +9,6 @@ pub trait ToDOT {
     fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String>;
 
     fn write_to_dot_file(self: &Self, out_path: &PathBuf, clean_dot: bool) -> Result<()> {
-        use std::fs::File;
-        use std::io::Write;
-
         let mut out_file = File::create(&out_path)?;
 
         for line in self.to_dot_lines(clean_dot).into_iter() {

@@ -6,3 +6,8 @@ Suported languages: Java (complete support) and Python (partial support, only fo
 
 ## CLI
 
+To run the CLI, you can enter `<evecutable> open <path-to-source-files-root>`.
+
+`<executable>` here can be either the actual executable or `cargo run --`, whick allows to build and run with the following arguments.
+
+Run `<executable> open --help` to see all available flags.

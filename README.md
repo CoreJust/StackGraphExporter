@@ -4,6 +4,14 @@ A CLI utility to generate stack graphs from source code folders. It allows to wr
 
 Suported languages: Java (complete support) and Python (partial support, only for Stack Graph generation).
 
+## Implementation notes
+
+For Java, some features of the language are not supported (because they are not supported by the crate [tree-sitter-stack-graphs-java](https://crates.io/crates/tree-sitter-stack-graphs-java)):
+
+1. Static imports
+2. Static scopes (i.e. `static { /* some code */ }` in the class scope)
+3. Imports with asterisks (`import some.package.*`)
+
 ## CLI
 
 To run the CLI, you can enter `<evecutable> open <path-to-source-files-root>`, which loads the code into a stack graph and starts interactive mode where you can run commands to configure the project, generate artifacts, run queries.
@@ -61,11 +69,13 @@ Note that the artifacts are not generated automatically, you need to either run 
   -o, --output <OUTPUT>
       --output-cfg <OUTPUT_CFG>
       --output-csv <OUTPUT_CSV>
-      --output-stack-graph-dot <OUTPUT_STACK_GRAPH_DOT>
+      --output-stack-graph-dot or --output-sg-dot <OUTPUT_STACK_GRAPH_DOT>
       --output-dot-ucfs <OUTPUT_DOT_UCFS>
       --output-kt <OUTPUT_KT>
-      --output-stack-graph-json <OUTPUT_STACK_GRAPH_JSON>
+      --output-stack-graph-json or --output-sg-json <OUTPUT_STACK_GRAPH_JSON>
 ```
+
+`-o, --output` sets directory for all the artifacts, others override paths for specific artifacts. By default, directory for all the artifacts is set to `./`.
 
 6. Immediate query flags:
 ```
@@ -73,10 +83,61 @@ Note that the artifacts are not generated automatically, you need to either run 
       --source <SOURCE>
 ```
 
-Other flags:
-  -q, --query
+Immediately generates all the requested artifacts.
+
+For `--source` you have to specify full path to the symbol (`<path-to-file>:<line>:<column>`) and then the query is immediately executed, then app exits.
+
+For `--symbol` you have to specify symbol name and then you enter the query mode (see Query mode below), after which the app exits.
+
+7. Other flags:
+```
       --verify
-  -v, --verbose
+```
+
+Enables verification. When verification is enabled and the query is done with KotGLL, the results are parsed and compared to the results produced by stack graphs. **For UCFS verification is not implemented yet.**
+
+```
       --all-symbols
+```
+
+By default, in the query mode you you only see nodes which are at the beginning of at least one partial path. You can disable this behaviour with this flag and see all the nodes for the symbol you requested.
+
+**Note: even in medium-sized projects one symbol might have hundreds or thousands of nodes. Filtering them by having at least one partial path can reduce the number by several times. Emperically it was verified that nodes without partial paths are resolbed to nothing. But it must be further investigated.**
+
+```
       --simplify-cfl
+```
+
+Currently produced CFL graphs have a lot of epsilon edges. Some might be easily pruned, which is enabled with this flag.
+
+```
+  -v, --verbose
   -h, --help
+```
+
+Self-explanatory. The former enables verbose output, the latter prints help information.
+
+## Interactive mode
+
+Available commands:
+
+```
+create, c [<artifact>]
+query, q, run, r <symbol>
+enable, e <feature>
+disable, d <feature>
+output, o [<artifact>] <path>
+state, s
+help, h
+quit, exit, halt
+```
+
+### Query mode
+
+Triggered by either using `--symbol` argument or running a query in interactive mode.
+
+First, all the nodes that correspond to the symbol are found. Then, they are filtered by having at least one partial path that begins in a node (or not filtered if all-symbols feature is enabled, see `--all-symbols` above).
+
+Those nodes are shown to the user and the user is given the choice: either query for all the nodes at once (enter `a`) or query for one specific node (enter that node's index in the list shown).
+
+Then the query is run depending on enabled backends and features.

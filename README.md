@@ -12,6 +12,41 @@ For Java, some features of the language are not supported (because they are not 
 2. Static scopes (i.e. `static { /* some code */ }` in the class scope)
 3. Imports with asterisks (`import some.package.*`)
 
+## Sample workflow
+
+```
+> cargo run -- open ../JsonPath/json-path/src/main/java/com/jayway/jsonpath
+[00:00:05] [########################################] 100% [5834ms] Stack graph built successfully
+success: Loaded project at ../JsonPath/json-path/src/main/java/com/jayway/jsonpath
+
+> e ucfs
+info: Enabled ucfs
+
+> q evaluate
+[00:00:01] [########################################] 100% [1632ms] SGGraph built successfully
+[00:00:04] [########################################] 100% [3962ms] Database built successfully
+[00:00:00] [########################################] 100% [339ms] Indexed nodes at partial path start
+[00:00:00] [########################################] 100% [18ms] Found 103 references and 33 definitions for symbol 'evaluate'
+info: Found 33 references:
+  [0] node 17125 at ../JsonPath/json-path/src/main/java/com/jayway/jsonpath\internal\filter\EvaluatorFactory.java:60:58
+  [1] node 17265 at ../JsonPath/json-path/src/main/java/com/jayway/jsonpath\internal\filter\EvaluatorFactory.java:67:60
+  ...
+  [32] node 114196 at ../JsonPath/json-path/src/main/java/com/jayway/jsonpath\JsonPath.java:348:51
+Enter index to resolve (or 'a' for all, empty to cancel):
+
+> 13
+[00:00:00] [########################################] 100% [2ms] Paths stitched successfully
+info: [0] Node 71622 resolves to 2 definitions:
+  - ../JsonPath/json-path/src/main/java/com/jayway/jsonpath\internal\path\CompiledPath.java:105:29 local_id 1373
+  - ../JsonPath/json-path/src/main/java/com/jayway/jsonpath\internal\path\CompiledPath.java:90:29 local_id 1071
+[00:00:00] [########################################] 100% [189ms] CFL graph built successfully
+[00:00:00] [########################################] 100% [23ms] UCFS query grammar generated
+info: UCFS query DOT generated at .\query.cfl_ucfs.dot
+info: UCFS query grammar generated at .\UCFSGrammar.kt
+
+> exit
+```
+
 ## CLI
 
 To run the CLI, you can enter `<evecutable> open <path-to-source-files-root>`, which loads the code into a stack graph and starts interactive mode where you can run commands to configure the project, generate artifacts, run queries.
@@ -132,6 +167,8 @@ help, h
 quit, exit, halt
 ```
 
+<TODO>
+
 ### Query mode
 
 Triggered by either using `--symbol` argument or running a query in interactive mode.
@@ -141,3 +178,7 @@ First, all the nodes that correspond to the symbol are found. Then, they are fil
 Those nodes are shown to the user and the user is given the choice: either query for all the nodes at once (enter `a`) or query for one specific node (enter that node's index in the list shown).
 
 Then the query is run depending on enabled backends and features.
+
+## Examples
+
+<TODO>

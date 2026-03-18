@@ -28,27 +28,55 @@ By default Java is assumed.
       --ucfs
 ```
 
+By default both are disabled and all queries run solely against stack graphs.
+
+When KotGLL is enabled, the corresponding artifacts are produced and KotGLL jar is invoked directly, then it's output is parsed and printed.
+
+For UCFS, only the corresponding artifacts (Kotling grammar and DOT graph) are produced which you need to integrate with UCFS yourself.
+
+3. KotGLL-related flags:
+```
+      --sppf
+      --kotgll-path <KOTGLL_PATH>
+```
+
+SPPF enables output in the format of SPPF. KotGLL path is required to be provided when using KotGLL (it must be an executable JAR).
+
+4. Artifact generation flags:
+```
+      --cfg
+      --csv
+      --stack-graph-dot or --sg-dot
+      --dot-ucfs
+      --kt
+      --stack-graph-json or --sg-json
+```
+
+Enable generation of corresponding artifacts (those not marked with `stack-graph` or `sg` are for CFL).
+
+Note that the artifacts are not generated automatically, you need to either run `create` without arguments later in interactive mode or make an immediate query (see Immediate query below).
+
+5. Artifact output path flags:
+```
+  -o, --output <OUTPUT>
+      --output-cfg <OUTPUT_CFG>
+      --output-csv <OUTPUT_CSV>
+      --output-stack-graph-dot <OUTPUT_STACK_GRAPH_DOT>
+      --output-dot-ucfs <OUTPUT_DOT_UCFS>
+      --output-kt <OUTPUT_KT>
+      --output-stack-graph-json <OUTPUT_STACK_GRAPH_JSON>
+```
+
+6. Immediate query flags:
+```
+  -s, --symbol <SYMBOL>
+      --source <SOURCE>
+```
+
 Other flags:
   -q, --query
       --verify
   -v, --verbose
       --all-symbols
       --simplify-cfl
-      --sppf
-      --kotgll-path <KOTGLL_PATH>
-      --cfg
-      --csv
-      --dot
-      --dot-ucfs
-      --kt
-      --stack-graph-json
-  -o, --output <OUTPUT>
-      --output-cfg <OUTPUT_CFG>
-      --output-csv <OUTPUT_CSV>
-      --output-dot <OUTPUT_DOT>
-      --output-dot-ucfs <OUTPUT_DOT_UCFS>
-      --output-kt <OUTPUT_KT>
-      --output-stack-graph-json <OUTPUT_STACK_GRAPH_JSON>
-  -s, --symbol <SYMBOL>
-      --source <SOURCE>
   -h, --help

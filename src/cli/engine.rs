@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::unsupported_features_cleaner::clean_unsupported_features;
 use crate::{
     artifacts::*,
     cfl_builder::convert_to_cfl,
@@ -106,9 +107,15 @@ impl Engine {
         }
     }
 
-    pub fn load(&mut self, path: &Path) -> Result<()> {
+    fn clean_unsupported_features(&mut self, path: &Path) -> Result<()> {
         let mut renderer = ProgressRenderer::new();
-        let graph = load_stack_graph(path, self.language.clone(), |e| renderer.render(&e))?;
+        clean_unsupported_features(path, &self.language, |e| renderer.render(&e))
+    }
+
+    pub fn load(&mut self, path: &Path) -> Result<()> {
+        self.clean_unsupported_features(path)?;
+        let mut renderer = ProgressRenderer::new();
+        let graph = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
         self.stack_graph = Some(graph);
         Ok(())
     }

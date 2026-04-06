@@ -11,6 +11,13 @@ For Java, some features of the language are not supported (because they are not 
 1. Static imports
 2. Static scopes (i.e. `static { /* some code */ }` in the class scope)
 3. Imports with asterisks (`import some.package.*`)
+4. C-style arrays
+5. Some comments, e.g.
+```Java
+public int f(int v,
+// int deprecated,
+    int q);
+```
 
 ## Sample workflow
 

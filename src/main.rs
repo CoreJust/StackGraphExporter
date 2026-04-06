@@ -8,6 +8,7 @@ mod io;
 mod loading;
 mod sg_builder;
 mod sg_query;
+mod unsupported_features_cleaner;
 
 use error::Result;
 

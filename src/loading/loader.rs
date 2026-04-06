@@ -14,24 +14,16 @@ use crate::loading::merge::merge_graphs_with_progress;
 
 pub fn load_stack_graph<F>(
     project_dir: &Path,
-    language: Language,
+    language: &Language,
     mut progress: F,
 ) -> Result<StackGraph>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    if !project_dir.is_dir() {
-        return Err(Error::InvalidArgument(format!(
-            "Path is not a directory: {}",
-            project_dir.display(),
-        )));
-    }
-
     let start_time = Instant::now();
     let sg_language = language.build_stack_graph_language()?;
-    let extensions = language.file_extensions();
 
-    let file_paths = discover_files(project_dir, &extensions)?;
+    let file_paths = discover_files(project_dir, &language)?;
     let total_files = file_paths.len();
 
     progress(ProgressEvent::FilesFound {

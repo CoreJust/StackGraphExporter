@@ -44,6 +44,28 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                     crate::error!("{}", e);
                 }
             }
+            "clean" => {
+                if parts.len() > 2 {
+                    crate::error!("Usage: clean [<artifact>]");
+                    continue;
+                }
+                let artifact = if parts.len() == 1 {
+                    None
+                } else {
+                    match parse_artifact(parts[1]) {
+                        Some(artifact) => Some(artifact),
+                        None => {
+                            return Err(Error::InvalidArgument(format!(
+                                "Unknown artifact '{}'",
+                                parts[1]
+                            )));
+                        }
+                    }
+                };
+                if let Err(e) = processor.process(Command::Clean { artifact }) {
+                    crate::error!("{}", e);
+                }
+            }
             "query" | "q" | "r" | "run" => {
                 if parts.len() < 2 {
                     crate::error!("Usage: query <symbol>");

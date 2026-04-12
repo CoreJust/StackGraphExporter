@@ -18,6 +18,10 @@ pub enum Commands {
 
 #[derive(Args)]
 pub struct OpenArgs {
+    // Loading flags
+    #[arg(long)]
+    pub remove_unsupported: bool,
+
     // Language choice
     #[arg(short, long)]
     pub java: bool,

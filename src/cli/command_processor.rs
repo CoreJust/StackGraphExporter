@@ -24,6 +24,9 @@ pub enum Command {
     Create {
         artifact: Option<ArtifactType>,
     },
+    Clean {
+        artifact: Option<ArtifactType>,
+    },
     QuerySymbol {
         symbol: String,
     },
@@ -51,6 +54,7 @@ impl CommandProcessor {
             Command::Disable { feature } => self.cmd_disable(&feature),
             Command::Output { artifact, path } => self.cmd_output(artifact, path),
             Command::Create { artifact } => self.cmd_create(artifact),
+            Command::Clean { artifact } => self.cmd_clean(artifact),
             Command::QuerySymbol { symbol } => self.cmd_query_symbol(&symbol),
             Command::QueryNode { node } => self.cmd_query_node(node),
             Command::State => self.cmd_state(),
@@ -79,9 +83,9 @@ impl CommandProcessor {
             }
             "verify" => self.engine.verify = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
-            "simplify" => self.engine.simplify_cfl = true,
+            "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = true,
             _ => {
-                crate::error!("Unknown feature '{}'", feature);
+                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl");
                 return Ok(());
             }
         }
@@ -103,9 +107,9 @@ impl CommandProcessor {
             }
             "verify" => self.engine.verify = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
-            "simplify" => self.engine.simplify_cfl = false,
+            "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = false,
             _ => {
-                crate::error!("Unknown feature '{}'", feature);
+                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl", feature);
                 return Ok(());
             }
         }
@@ -131,6 +135,17 @@ impl CommandProcessor {
         } else {
             self.engine.generate_artifacts()?;
             crate::success!("Generated all enabled artifacts");
+        }
+        Ok(())
+    }
+
+    fn cmd_clean(&mut self, artifact: Option<ArtifactType>) -> Result<()> {
+        if let Some(art) = artifact {
+            self.engine.generated_artifacts.remove(&art);
+            crate::info!("Marked artifact {art:?} as not generated");
+        } else {
+            self.engine.generated_artifacts.clear();
+            crate::info!("Marked all artifact as not generated");
         }
         Ok(())
     }
@@ -213,8 +228,8 @@ impl CommandProcessor {
             self.engine.kotgll_query(symbol)?;
         }
         if self.engine.ucfs_enabled {
-            let indices_u32: Vec<u32> = indices.into_iter().map(|i| *i as u32).collect();
-            let (dot_path, grammar_path) = self.engine.generate_ucfs_query(symbol, &indices_u32)?;
+            let cfl_indices = self.engine.map_reference_nodes_to_cfl(indices)?;
+            let (dot_path, grammar_path) = self.engine.generate_ucfs_query(symbol, &cfl_indices)?;
             crate::info!("UCFS query DOT generated at {}", dot_path.display());
             crate::info!("UCFS query grammar generated at {}", grammar_path.display());
         }

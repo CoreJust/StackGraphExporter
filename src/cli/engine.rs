@@ -27,6 +27,7 @@ pub enum ArtifactType {
 pub struct Engine {
     stack_graph: Option<stack_graphs::graph::StackGraph>,
     language: Language,
+    pub remove_unsupported: bool,
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
     pub verify: bool,
@@ -43,7 +44,7 @@ pub struct Engine {
     pub output_dir: PathBuf,
     pub output_overrides: HashMap<ArtifactType, PathBuf>,
     pub kotgll_path: Option<PathBuf>,
-    generated_artifacts: HashMap<ArtifactType, PathBuf>,
+    pub generated_artifacts: HashMap<ArtifactType, PathBuf>,
     context: Option<StackGraphContext>,
     cfl_graph: Option<CFLGraph>,
     cfl_pop_map: Option<HashMap<SGNodeIndex, CFLNodeIndex>>,
@@ -81,6 +82,7 @@ impl Engine {
 
         Self {
             stack_graph: None,
+            remove_unsupported: args.remove_unsupported,
             language,
             kotgll_enabled: args.kotgll,
             ucfs_enabled: args.ucfs,
@@ -113,7 +115,9 @@ impl Engine {
     }
 
     pub fn load(&mut self, path: &Path) -> Result<()> {
-        self.clean_unsupported_features(path)?;
+        if self.remove_unsupported {
+            self.clean_unsupported_features(path)?;
+        }
         let mut renderer = ProgressRenderer::new();
         let graph = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
         self.stack_graph = Some(graph);
@@ -133,13 +137,23 @@ impl Engine {
             let mut renderer = ProgressRenderer::new();
             let mut ctx = build_sggraph(graph, |e| renderer.render(&e))?;
             self.nodes_with_partials = ctx.find_all_partial_starts(|e| renderer.render(&e))?;
+            crate::info!(
+                "Generated SG graph size: {} vertices, {} edges; {} symbols",
+                ctx.sggraph.nodes.len(),
+                ctx.sggraph.edges.len(),
+                ctx.sggraph.symbols.len(),
+            );
             self.context = Some(ctx);
         }
         Ok(self.context.as_mut().unwrap())
     }
 
-    fn ensure_cfl_graph<'a>(&'a mut self, simplify: bool) -> Result<&'a CFLGraph> {
-        if self.cfl_graph.is_some() && simplify == self.simplify_cfl {
+    fn ensure_cfl_graph<'a>(&'a mut self) -> Result<&'a CFLGraph> {
+        let simplify = self.simplify_cfl;
+        if self.cfl_graph.is_some() && self.cfl_graph_simplified == simplify {
+            if self.verbose {
+                crate::debug!("ensure_cfl_graph: CFL graph already exists, returning it (simplified? {simplify})");
+            }
             Ok(self.cfl_graph.as_ref().unwrap())
         } else {
             (self.cfl_graph, self.cfl_pop_map) = {
@@ -147,6 +161,17 @@ impl Engine {
                 let mut renderer = ProgressRenderer::new();
                 let (graph, pop_map) =
                     convert_to_cfl(&ctx.sggraph, simplify, |e| renderer.render(&e))?;
+                let vertices_count = graph
+                    .edges
+                    .iter()
+                    .map(|e| e.from.max(e.to))
+                    .max()
+                    .unwrap_or(0);
+                crate::info!(
+                    "Generated CFL graph size: {vertices_count} vertices, {} edges; {} rules",
+                    graph.edges.len(),
+                    graph.rules.len(),
+                );
                 (Some(graph), Some(pop_map))
             };
             self.cfl_graph_simplified = simplify;
@@ -165,6 +190,47 @@ impl Engine {
                 .collect())
         } else {
             Ok(refs)
+        }
+    }
+
+    pub fn map_reference_nodes_to_cfl(
+        &mut self,
+        indices: &[SGNodeIndex],
+    ) -> Result<Vec<CFLNodeIndex>> {
+        if !self.simplify_cfl {
+            // If graph wasn't simplified, then in-nodes have the same IDs
+            // as in sggraph.
+            Ok(indices.iter().map(|i| *i).collect::<Vec<CFLNodeIndex>>())
+        } else {
+            let verbose = self.verbose;
+            let cfl_graph = self.ensure_cfl_graph()?;
+            let sg_node_index_to_cfl = cfl_graph
+                .metadata
+                .iter()
+                .map(|(cfl_idx, meta)| (meta.sg_node_index, *cfl_idx))
+                .collect::<HashMap<SGNodeIndex, CFLNodeIndex>>();
+            Ok(indices
+                .iter()
+                .map(|i| {
+                    if verbose {
+                        let idx = sg_node_index_to_cfl
+                            .get(i)
+                            .and_then(|i| Some(*i))
+                            .unwrap_or(0);
+                        crate::debug!(
+                            "map_reference_nodes_to_cfl: Mapping {i} to {idx}, symbol {}",
+                            &cfl_graph
+                                .metadata
+                                .get(&idx)
+                                .and_then(|m| Some(m.name.as_str()))
+                                .unwrap_or("none")
+                        );
+                    }
+                    *sg_node_index_to_cfl.get(i).expect(
+                        "SGNodeIndex doesn't correspond to any cfl node in the built mapping",
+                    )
+                })
+                .collect::<Vec<CFLNodeIndex>>())
         }
     }
 
@@ -387,11 +453,11 @@ impl Engine {
         self.generated_artifacts.insert(artifact, path.clone());
         match artifact {
             ArtifactType::Cfg => {
-                let cfl = self.ensure_cfl_graph(self.simplify_cfl)?;
+                let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_grammar_file(&path)?;
             }
             ArtifactType::Csv => {
-                let cfl = self.ensure_cfl_graph(self.simplify_cfl)?;
+                let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_csv_file(&path, false)?;
             }
             ArtifactType::Dot => {
@@ -399,11 +465,11 @@ impl Engine {
                 ctx.sggraph.write_to_dot_file(&path, false)?;
             }
             ArtifactType::DotUcfs => {
-                let cfl = self.ensure_cfl_graph(self.simplify_cfl)?;
+                let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_dot_file(&path, true)?;
             }
             ArtifactType::Kt => {
-                let cfl = self.ensure_cfl_graph(self.simplify_cfl)?;
+                let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_kotlin_file(&path, "UCFSGrammar")?;
             }
             ArtifactType::Json => {

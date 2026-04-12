@@ -1,4 +1,12 @@
 #[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {{
+        use crossterm::style::{style, Color, Stylize};
+        eprintln!("{} {}", style("debug:").with(Color::Grey), format_args!($($arg)*));
+    }};
+}
+
+#[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {{
         use crossterm::style::{style, Color, Stylize};

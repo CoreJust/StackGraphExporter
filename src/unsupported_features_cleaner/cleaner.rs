@@ -18,6 +18,7 @@ where
 {
     let marker = project_dir.join(".unsupported_features_cleaned");
     if marker.exists() {
+        progress(ProgressEvent::DoneCached)?;
         return Ok(());
     }
 

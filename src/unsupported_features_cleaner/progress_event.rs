@@ -6,6 +6,7 @@ use crate::io::{ProgressEvent as IOProgressEvent, ProgressState};
 
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
+    DoneCached,
     FilesFound {
         count: usize,
         elapsed: Duration,
@@ -28,6 +29,12 @@ pub enum ProgressEvent {
 impl fmt::Display for ProgressEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProgressEvent::DoneCached => {
+                write!(
+                    f,
+                    "Unsupported features were already removed; Skipping this stage"
+                )
+            }
             ProgressEvent::FilesFound { count, .. } => {
                 write!(f, "Found {} Java files for cleaning", count)
             }
@@ -50,6 +57,12 @@ impl fmt::Display for ProgressEvent {
 impl IOProgressEvent for ProgressEvent {
     fn state(&self) -> ProgressState {
         match self {
+            ProgressEvent::DoneCached => ProgressState {
+                is_final: true,
+                elapsed: Duration::ZERO,
+                progress: 0.0,
+                objects_handled: None,
+            },
             ProgressEvent::FilesFound { elapsed, .. } => ProgressState {
                 is_final: false,
                 progress: 0.0,

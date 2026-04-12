@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::core::SGNodeIndex;
+
 pub type CFLSymbolIndex = usize;
 pub type CFLNodeIndex = u32;
 pub type CFLFileIndex = usize;
@@ -29,6 +31,7 @@ pub struct CFLNodeMetadata {
     pub file: Option<CFLFileIndex>,
     pub line: Option<usize>,
     pub is_real: bool,
+    pub sg_node_index: SGNodeIndex, // Original index from SGGraph
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

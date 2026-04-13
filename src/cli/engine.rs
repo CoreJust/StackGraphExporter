@@ -1,17 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
+use crate::core::Stats;
+use crate::io::ElapsedAndCount;
+use crate::sg_query::{ProgressEvent, ResolutionResult};
 use crate::unsupported_features_cleaner::clean_unsupported_features;
 use crate::{
     artifacts::*,
     cfl_builder::convert_to_cfl,
     cfl_query::{kotgll_query, ucfs_query},
-    core::{CFLGraph, CFLNodeIndex, SGFileIndex, SGNodeId, SGNodeIndex},
+    core::{CFLGraph, CFLNodeIndex, SGFileIndex, SGNodeIndex},
     error::{Error, Result},
     io::ProgressRenderer,
     loading::{load_stack_graph, Language},
     sg_builder::{build_sggraph, StackGraphContext},
-    sg_query::ResolvedDefinition,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,10 +48,11 @@ pub struct Engine {
     pub output_overrides: HashMap<ArtifactType, PathBuf>,
     pub kotgll_path: Option<PathBuf>,
     pub generated_artifacts: HashMap<ArtifactType, PathBuf>,
+    pub stats: Stats,
     context: Option<StackGraphContext>,
     cfl_graph: Option<CFLGraph>,
     cfl_pop_map: Option<HashMap<SGNodeIndex, CFLNodeIndex>>,
-    cfl_graph_simplified: bool,
+    pub cfl_graph_simplified: bool,
     nodes_with_partials: HashSet<SGNodeIndex>,
 }
 
@@ -80,6 +84,7 @@ impl Engine {
             overrides.insert(ArtifactType::Json, p);
         }
 
+        let project_path = output_dir.display().to_string();
         Self {
             stack_graph: None,
             remove_unsupported: args.remove_unsupported,
@@ -101,6 +106,10 @@ impl Engine {
             output_overrides: overrides,
             kotgll_path: args.kotgll_path,
             generated_artifacts: HashMap::new(),
+            stats: Stats {
+                project_path,
+                ..Default::default()
+            },
             context: None,
             cfl_graph: None,
             cfl_pop_map: None,
@@ -119,8 +128,9 @@ impl Engine {
             self.clean_unsupported_features(path)?;
         }
         let mut renderer = ProgressRenderer::new();
-        let graph = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
+        let (graph, built_in) = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
         self.stack_graph = Some(graph);
+        self.stats.stack_gtaph.built_in = built_in.as_millis() as u64;
         Ok(())
     }
 
@@ -131,7 +141,7 @@ impl Engine {
         self.stack_graph.as_ref().expect("StackGraph not loaded")
     }
 
-    pub fn ensure_context<'a>(&'a mut self) -> Result<&'a mut StackGraphContext> {
+    fn ensure_context<'a>(&'a mut self) -> Result<&'a mut StackGraphContext> {
         if self.context.is_none() {
             let graph = self.stack_graph.take().expect("StackGraph not loaded");
             let mut renderer = ProgressRenderer::new();
@@ -143,6 +153,9 @@ impl Engine {
                 ctx.sggraph.edges.len(),
                 ctx.sggraph.symbols.len(),
             );
+            self.stats.stack_gtaph.vertices = ctx.sggraph.nodes.len();
+            self.stats.stack_gtaph.edges = ctx.sggraph.edges.len();
+            self.stats.stack_gtaph.symbols = ctx.sggraph.symbols.len();
             self.context = Some(ctx);
         }
         Ok(self.context.as_mut().unwrap())
@@ -159,7 +172,7 @@ impl Engine {
             (self.cfl_graph, self.cfl_pop_map) = {
                 let ctx = self.ensure_context()?;
                 let mut renderer = ProgressRenderer::new();
-                let (graph, pop_map) =
+                let (graph, pop_map, built_in) =
                     convert_to_cfl(&ctx.sggraph, simplify, |e| renderer.render(&e))?;
                 let vertices_count = graph
                     .edges
@@ -172,6 +185,15 @@ impl Engine {
                     graph.edges.len(),
                     graph.rules.len(),
                 );
+                let cfl_stats = if simplify {
+                    &mut self.stats.cfl_graph_simplified
+                } else {
+                    &mut self.stats.cfl_graph
+                };
+                cfl_stats.built_in = built_in.as_millis() as u64;
+                cfl_stats.vertices = vertices_count as usize;
+                cfl_stats.edges = graph.edges.len();
+                self.stats.cfl_grammar.rules = graph.rules.len();
                 (Some(graph), Some(pop_map))
             };
             self.cfl_graph_simplified = simplify;
@@ -179,10 +201,59 @@ impl Engine {
         }
     }
 
+    pub fn query_all_symbols(&mut self, needed_at_most: u32) -> Result<Vec<ResolutionResult>> {
+        let ctx = self.ensure_context()?;
+        let mut renderer = ProgressRenderer::new();
+        let refs = ctx.find_reference_nodes(None, |e| renderer.render(&e))?;
+        let refs = refs
+            .into_iter()
+            .filter(|r| self.nodes_with_partials.contains(&r))
+            .collect::<Vec<_>>();
+        let mut result = Vec::new();
+        let ctx = self.ensure_context()?;
+        let start = Instant::now();
+        let total_refs = refs.len();
+        for (i, r) in refs.into_iter().enumerate() {
+            let resolution_result = ctx.resolve_reference(r, |_| Ok(()))?;
+            if !resolution_result.defs.is_empty() {
+                result.push(resolution_result);
+                renderer.render(&ProgressEvent::ResolvingSymbols {
+                    elapsed_and_processed: ElapsedAndCount {
+                        current: i,
+                        total: total_refs,
+                        elapsed: start.elapsed(),
+                    },
+                    found_resolvable_refs: result.len(),
+                    needed_at_most,
+                })?;
+                if result.len() >= needed_at_most as usize {
+                    break;
+                }
+            }
+        }
+        self.stats.partial_database_built_in =
+            ctx.database_built_in.unwrap_or(Duration::ZERO).as_millis() as u64;
+        Ok(result)
+    }
+
+    pub fn retry_query_for_durations(
+        &mut self,
+        resolution: &ResolutionResult,
+        result: &mut [Duration],
+    ) -> Result<()> {
+        let ctx = self.ensure_context()?;
+        for r in result {
+            let resolution_result = ctx.resolve_reference(resolution.node_index, |_| Ok(()))?;
+            *r = resolution_result.resolved_in;
+        }
+        Ok(())
+    }
+
     pub fn find_reference_nodes_by_symbol(&mut self, symbol: &str) -> Result<Vec<SGNodeIndex>> {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
-        let refs = ctx.find_reference_nodes_by_symbol(symbol, |e| renderer.render(&e))?;
+        let refs: Vec<SGNodeIndex> =
+            ctx.find_reference_nodes(Some(symbol), |e| renderer.render(&e))?;
         if !self.all_symbols {
             Ok(refs
                 .into_iter()
@@ -254,29 +325,13 @@ impl Engine {
         Ok((file, line_col.map(|(l, _)| l), line_col.map(|(_, c)| c)))
     }
 
-    pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<Vec<ResolvedDefinition>> {
+    pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<ResolutionResult> {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
-        ctx.resolve_reference(node_idx, |e| renderer.render(&e))
-    }
-
-    fn sg_index_from_def(&self, def: &ResolvedDefinition) -> Option<SGNodeIndex> {
-        let ctx = self.context.as_ref()?;
-        let file_idx = ctx
-            .sggraph
-            .files
-            .iter()
-            .position(|name| name == &def.file)
-            .map(|i| i as SGFileIndex);
-        let node_id = SGNodeId {
-            file: file_idx,
-            local_id: def.local_id,
-        };
-        ctx.sggraph
-            .ids
-            .iter()
-            .position(|id| id == &node_id)
-            .map(|i| i as SGNodeIndex)
+        let result = ctx.resolve_reference(node_idx, |e| renderer.render(&e));
+        self.stats.partial_database_built_in =
+            ctx.database_built_in.unwrap_or(Duration::ZERO).as_millis() as u64;
+        result
     }
 
     pub fn find_node_at_source(
@@ -344,20 +399,21 @@ impl Engine {
             // TODO: pass references already acquired in the command_processor here
             let refs = self
                 .ensure_context()?
-                .find_reference_nodes_by_symbol(symbol, |e| renderer.render(&e))?;
+                .find_reference_nodes(Some(symbol), |e| renderer.render(&e))?;
             let mut stack_defs = HashSet::new();
-            for &r in &refs {
+            for r in refs {
                 let mut renderer = ProgressRenderer::new();
-                let defs = self
+                let def_indices = self
                     .ensure_context()?
-                    .resolve_reference(r, |e| renderer.render(&e))?;
-                for d in defs {
-                    if let Some(sg_idx) = self.sg_index_from_def(&d) {
-                        if let Some(cfl_idx) =
-                            self.cfl_pop_map.as_ref().and_then(|m| m.get(&sg_idx))
-                        {
-                            stack_defs.insert(*cfl_idx);
-                        }
+                    .resolve_reference(r, |e| renderer.render(&e))?
+                    .defs
+                    .into_iter()
+                    .map(|d| d.sg_node_index)
+                    .collect::<Vec<_>>();
+                for sg_index in def_indices {
+                    if let Some(cfl_idx) = self.cfl_pop_map.as_ref().and_then(|m| m.get(&sg_index))
+                    {
+                        stack_defs.insert(*cfl_idx);
                     }
                 }
             }
@@ -389,6 +445,11 @@ impl Engine {
                     }
                 }
             }
+            self.stats.partial_database_built_in = self
+                .ensure_context()?
+                .database_built_in
+                .unwrap_or(Duration::ZERO)
+                .as_millis() as u64;
         }
         Ok(())
     }
@@ -467,10 +528,20 @@ impl Engine {
             ArtifactType::DotUcfs => {
                 let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_dot_file(&path, true)?;
+                let cfl_stats = if self.cfl_graph_simplified {
+                    &mut self.stats.cfl_graph_simplified
+                } else {
+                    &mut self.stats.cfl_graph
+                };
+                cfl_stats.path = path.display().to_string();
+                cfl_stats.file_size = std::fs::metadata(&cfl_stats.path)?.len();
             }
             ArtifactType::Kt => {
                 let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_kotlin_file(&path, "UCFSGrammar")?;
+                self.stats.cfl_grammar.path = path.display().to_string();
+                self.stats.cfl_grammar.file_size =
+                    std::fs::metadata(&self.stats.cfl_grammar.path)?.len();
             }
             ArtifactType::Json => {
                 let serializable = self.stack_graph().to_serializable();
@@ -499,7 +570,7 @@ impl Engine {
         Ok(())
     }
 
-    fn output_path(&self, artifact: ArtifactType) -> PathBuf {
+    pub fn output_path(&self, artifact: ArtifactType) -> PathBuf {
         if let Some(overridden) = self.output_overrides.get(&artifact) {
             overridden.clone()
         } else {

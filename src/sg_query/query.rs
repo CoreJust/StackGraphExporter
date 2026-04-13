@@ -1,5 +1,6 @@
 use super::progress_event::ProgressEvent;
-use crate::core::{SGNode, SGNodeIndex};
+use crate::cfl_builder::get_symbol_of;
+use crate::core::{SGFileIndex, SGNode, SGNodeId, SGNodeIndex};
 use crate::error::{Error, Result};
 use crate::io::ElapsedAndCount;
 use crate::sg_builder::StackGraphContext;
@@ -9,7 +10,7 @@ use stack_graphs::stitching::{
 };
 use stack_graphs::NoCancellation;
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const PROGRESS_ONCE_IN: usize = 128;
 
@@ -19,12 +20,24 @@ pub struct ResolvedDefinition {
     pub line: usize,
     pub col: usize,
     pub local_id: u32,
+    pub sg_node_index: SGNodeIndex,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolutionResult {
+    pub name: String,
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+    pub node_index: SGNodeIndex,
+    pub resolved_in: Duration,
+    pub defs: Vec<ResolvedDefinition>,
 }
 
 impl StackGraphContext {
-    pub fn find_reference_nodes_by_symbol<F>(
+    pub fn find_reference_nodes<F>(
         &self,
-        name: &str,
+        by_symbol: Option<&str>,
         mut progress: F,
     ) -> Result<Vec<SGNodeIndex>>
     where
@@ -36,20 +49,28 @@ impl StackGraphContext {
         let total = self.sggraph.nodes.len();
         for (idx, node) in self.sggraph.nodes.iter().enumerate() {
             if idx % PROGRESS_ONCE_IN == 0 {
-                progress(ProgressEvent::LookingForReferences {
-                    elapsed_and_count: ElapsedAndCount {
+                if let Some(name) = by_symbol {
+                    progress(ProgressEvent::LookingForSymbolReferences {
+                        elapsed_and_count: ElapsedAndCount {
+                            current: idx,
+                            total,
+                            elapsed: start.elapsed(),
+                        },
+                        symbol: name,
+                    })?;
+                } else {
+                    progress(ProgressEvent::LookingForReferences(ElapsedAndCount {
                         current: idx,
                         total,
                         elapsed: start.elapsed(),
-                    },
-                    symbol: name,
-                })?;
+                    }))?;
+                }
             }
             let symbol_idx = match node {
                 SGNode::Push(s) | SGNode::PushScoped(s, _) => Some(*s),
                 SGNode::Pop(s) | SGNode::PopScoped(s) => {
                     let sym = &self.sggraph.symbols[*s];
-                    if sym.name == name && sym.real {
+                    if (by_symbol.is_none() || sym.name == by_symbol.unwrap()) && sym.real {
                         found_defs += 1;
                     }
                     None
@@ -58,17 +79,25 @@ impl StackGraphContext {
             };
             if let Some(sym_idx) = symbol_idx {
                 let sym = &self.sggraph.symbols[sym_idx];
-                if sym.name == name && sym.real {
+                if (by_symbol.is_none() || sym.name == by_symbol.unwrap()) && sym.real {
                     result.push(idx as SGNodeIndex);
                 }
             }
         }
-        progress(ProgressEvent::FoundReferences {
-            elapsed: start.elapsed(),
-            symbol: name,
-            found_refs: result.len(),
-            found_defs,
-        })?;
+        if let Some(name) = by_symbol {
+            progress(ProgressEvent::FoundSymbolReferences {
+                elapsed: start.elapsed(),
+                symbol: name,
+                found_refs: result.len(),
+                found_defs,
+            })?;
+        } else {
+            progress(ProgressEvent::FoundReferences {
+                elapsed: start.elapsed(),
+                found_refs: result.len(),
+                found_defs,
+            })?;
+        }
         Ok(result)
     }
 
@@ -143,11 +172,29 @@ impl StackGraphContext {
         Ok(result)
     }
 
+    pub fn sg_index_from_def(&self, file: &str, local_id: u32) -> Option<SGNodeIndex> {
+        let file_idx = self
+            .sggraph
+            .files
+            .iter()
+            .position(|name| name == file)
+            .map(|i| i as SGFileIndex);
+        let node_id = SGNodeId {
+            file: file_idx,
+            local_id: local_id,
+        };
+        self.sggraph
+            .ids
+            .iter()
+            .position(|id| *id == node_id)
+            .map(|i| i as SGNodeIndex)
+    }
+
     pub fn resolve_reference<F>(
         &mut self,
         node_index: SGNodeIndex,
         mut progress: F,
-    ) -> Result<Vec<ResolvedDefinition>>
+    ) -> Result<ResolutionResult>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
@@ -169,6 +216,7 @@ impl StackGraphContext {
             elapsed: start.elapsed(),
         })?;
 
+        let resolution_start = Instant::now();
         let (db, partials) = self.database.as_mut().unwrap();
         let mut db_candidates = DatabaseCandidates::new(&self.stack_graph, partials, db);
         let stitcher_config = StitcherConfig::default().with_detect_similar_paths(true);
@@ -189,7 +237,8 @@ impl StackGraphContext {
         )
         .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
 
-        let results = end_nodes
+        let resolved_in = resolution_start.elapsed();
+        let defs = end_nodes
             .into_iter()
             .map(|node_handle| {
                 let node_id = self.stack_graph[node_handle].id();
@@ -197,7 +246,7 @@ impl StackGraphContext {
                 let local_id = node_id.local_id();
                 let file = file_handle_opt.map(|fh| {
                     let file_struct = &self.stack_graph[fh];
-                    file_struct.name().to_string()
+                    file_struct.name()
                 });
                 let (line, col) = self
                     .stack_graph
@@ -209,11 +258,16 @@ impl StackGraphContext {
                         ))
                     })
                     .expect("An end node must have source info");
+                let file = file.expect("An end node must have a file").to_string();
+                let sg_node_index = self
+                    .sg_index_from_def(file.as_str(), local_id)
+                    .expect("Found definition has no corresponding node in SGGraph");
                 ResolvedDefinition {
-                    file: file.expect("An end node must have a file"),
+                    file,
                     line,
                     col,
                     local_id,
+                    sg_node_index,
                 }
             })
             .collect();
@@ -221,7 +275,18 @@ impl StackGraphContext {
         progress(ProgressEvent::PathsStitched {
             elapsed: start.elapsed(),
         })?;
-        Ok(results)
+        let ref_symbol_index = get_symbol_of(&self.sggraph.nodes[node_index as usize])
+            .expect("Resolved reference has no corresponding symbol in SGGraph");
+        let symbol = &self.sggraph.symbols[ref_symbol_index];
+        Ok(ResolutionResult {
+            name: symbol.name.to_string(),
+            file: self.sggraph.files[symbol.file.unwrap()].clone(),
+            line: symbol.line.unwrap(),
+            column: symbol.column.unwrap(),
+            node_index,
+            resolved_in,
+            defs,
+        })
     }
 
     fn database<F>(&mut self, mut progress: F) -> Result<&Database>
@@ -263,6 +328,7 @@ impl StackGraphContext {
             })?;
 
             self.database = Some((db, partials));
+            self.database_built_in = Some(start.elapsed());
         }
         Ok(&self.database.as_ref().unwrap().0)
     }

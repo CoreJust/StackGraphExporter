@@ -1,30 +1,109 @@
 use super::indexers::{FileIndexer, NodeIdIndexer, SymbolIndexer};
-use crate::core::{SGEdge, SGNode, SGNodeId, SGNodeIndex, SGSymbol};
+use crate::core::{SGEdge, SGNode, SGNodeId, SGNodeIndex, SGSymbol, SGSymbolIndex};
 use crate::error::{Error, Result};
-use stack_graphs::serde::{Edge, Node, NodeID};
+use stack_graphs::serde::{Edge, Node, NodeID, SourceInfo};
 
-pub fn parse_node(
-    node: &Node,
-    node_id_indexer: &mut NodeIdIndexer,
-    symbol_indexer: &mut SymbolIndexer,
-    file_indexer: &mut FileIndexer,
-) -> Result<(SGNodeIndex, SGNode)> {
+pub struct Indexers<'a> {
+    pub node_id_indexer: &'a mut NodeIdIndexer,
+    pub file_indexer: &'a mut FileIndexer,
+    pub symbol_indexer: &'a mut SymbolIndexer,
+}
+
+fn make_symbol(
+    file: Option<usize>,
+    symbol: &String,
+    is_real: bool,
+    source_info: &Option<SourceInfo>,
+) -> SGSymbol {
+    let (line, column) = source_info
+        .as_ref()
+        .map(|si| &si.span.start)
+        .map(|s| (Some(s.line as usize), Some(s.column.utf8_offset as usize)))
+        .unwrap_or((None, None));
+    SGSymbol {
+        name: symbol.clone(),
+        real: is_real,
+        file,
+        line,
+        column,
+    }
+}
+
+fn make_symbol_node(
+    indexers: Indexers,
+    id: &NodeID,
+    symbol: &String,
+    is_real: bool,
+    source_info: &Option<SourceInfo>,
+) -> (SGNodeIndex, SGSymbolIndex) {
+    let file = id
+        .file
+        .as_deref()
+        .map(|f| indexers.file_indexer.index_of(f));
+    let node_id = SGNodeId {
+        file: file.clone(),
+        local_id: id.local_id,
+    };
+    let node_index = indexers.node_id_indexer.index_of(node_id);
+    let sym = make_symbol(file, symbol, is_real, source_info);
+    let symbol_index = indexers.symbol_indexer.index_of(sym);
+    (node_index, symbol_index)
+}
+
+fn make_scoped_symbol_node(
+    indexers: Indexers,
+    id: &NodeID,
+    scope: &NodeID,
+    symbol: &String,
+    is_real: bool,
+    source_info: &Option<SourceInfo>,
+) -> (SGNodeIndex, SGNodeId, SGSymbolIndex) {
+    let file = id
+        .file
+        .as_deref()
+        .map(|f| indexers.file_indexer.index_of(f));
+    let node_id = SGNodeId {
+        file: file.clone(),
+        local_id: id.local_id,
+    };
+    let node_index = indexers.node_id_indexer.index_of(node_id);
+    let sym = make_symbol(file, symbol, is_real, source_info);
+    let symbol_index = indexers.symbol_indexer.index_of(sym);
+
+    let scope_file = scope
+        .file
+        .as_deref()
+        .map(|f| indexers.file_indexer.index_of(f));
+    let scope_id = SGNodeId {
+        file: scope_file,
+        local_id: scope.local_id,
+    };
+    (node_index, scope_id, symbol_index)
+}
+
+pub fn parse_node(node: &Node, indexers: Indexers) -> Result<(SGNodeIndex, SGNode)> {
     match node {
         Node::Scope {
             id, is_exported, ..
         } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
+            let file = id
+                .file
+                .as_deref()
+                .map(|f| indexers.file_indexer.index_of(f));
             let local_id = id.local_id;
             let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id);
+            let node_index = indexers.node_id_indexer.index_of(node_id);
             let sg_node = SGNode::Scope(*is_exported);
             Ok((node_index, sg_node))
         }
         Node::Root { id, .. } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
+            let file = id
+                .file
+                .as_deref()
+                .map(|f| indexers.file_indexer.index_of(f));
             let local_id = id.local_id;
             let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id);
+            let node_index = indexers.node_id_indexer.index_of(node_id);
             let sg_node = SGNode::Root;
             Ok((node_index, sg_node))
         }
@@ -35,20 +114,9 @@ pub fn parse_node(
             source_info,
             ..
         } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
-            let local_id = id.local_id;
-            let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id.clone());
-            let line = source_info.as_ref().map(|si| si.span.start.line as usize);
-            let sym = SGSymbol {
-                name: symbol.clone(),
-                real: *is_reference,
-                file: node_id.file,
-                line,
-            };
-            let symbol_index = symbol_indexer.index_of(sym);
-            let sg_node = SGNode::Push(symbol_index);
-            Ok((node_index, sg_node))
+            let (node_index, symbol_index) =
+                make_symbol_node(indexers, id, symbol, *is_reference, source_info);
+            Ok((node_index, SGNode::Push(symbol_index)))
         }
         Node::PopSymbol {
             id,
@@ -57,20 +125,9 @@ pub fn parse_node(
             source_info,
             ..
         } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
-            let local_id = id.local_id;
-            let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id.clone());
-            let line = source_info.as_ref().map(|si| si.span.start.line as usize);
-            let sym = SGSymbol {
-                name: symbol.clone(),
-                real: *is_definition,
-                file: node_id.file,
-                line,
-            };
-            let symbol_index = symbol_indexer.index_of(sym);
-            let sg_node = SGNode::Pop(symbol_index);
-            Ok((node_index, sg_node))
+            let (node_index, symbol_index) =
+                make_symbol_node(indexers, id, symbol, *is_definition, source_info);
+            Ok((node_index, SGNode::Pop(symbol_index)))
         }
         Node::PushScopedSymbol {
             id,
@@ -80,26 +137,12 @@ pub fn parse_node(
             source_info,
             ..
         } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
-            let local_id = id.local_id;
-            let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id.clone());
-            let line = source_info.as_ref().map(|si| si.span.start.line as usize);
-            let sym = SGSymbol {
-                name: symbol.clone(),
-                real: *is_reference,
-                file: node_id.file,
-                line,
-            };
-            let symbol_index = symbol_indexer.index_of(sym);
-
-            let scope_file = scope.file.as_deref().map(|f| file_indexer.index_of(f));
-            let scope_id = SGNodeId {
-                file: scope_file,
-                local_id: scope.local_id,
-            };
-            let sg_node = SGNode::PushScopedUnresolved(symbol_index, scope_id);
-            Ok((node_index, sg_node))
+            let (node_index, scope_id, symbol_index) =
+                make_scoped_symbol_node(indexers, id, scope, symbol, *is_reference, source_info);
+            Ok((
+                node_index,
+                SGNode::PushScopedUnresolved(symbol_index, scope_id),
+            ))
         }
         Node::PopScopedSymbol {
             id,
@@ -108,34 +151,29 @@ pub fn parse_node(
             source_info,
             ..
         } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
-            let local_id = id.local_id;
-            let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id.clone());
-            let line = source_info.as_ref().map(|si| si.span.start.line as usize);
-            let sym = SGSymbol {
-                name: symbol.clone(),
-                real: *is_definition,
-                file: node_id.file,
-                line,
-            };
-            let symbol_index = symbol_indexer.index_of(sym);
-            let sg_node = SGNode::PopScoped(symbol_index);
-            Ok((node_index, sg_node))
+            let (node_index, symbol_index) =
+                make_symbol_node(indexers, id, symbol, *is_definition, source_info);
+            Ok((node_index, SGNode::PopScoped(symbol_index)))
         }
         Node::JumpToScope { id, .. } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
+            let file = id
+                .file
+                .as_deref()
+                .map(|f| indexers.file_indexer.index_of(f));
             let local_id = id.local_id;
             let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id);
+            let node_index = indexers.node_id_indexer.index_of(node_id);
             let sg_node = SGNode::JumpTo;
             Ok((node_index, sg_node))
         }
         Node::DropScopes { id, .. } => {
-            let file = id.file.as_deref().map(|f| file_indexer.index_of(f));
+            let file = id
+                .file
+                .as_deref()
+                .map(|f| indexers.file_indexer.index_of(f));
             let local_id = id.local_id;
             let node_id = SGNodeId { file, local_id };
-            let node_index = node_id_indexer.index_of(node_id);
+            let node_index = indexers.node_id_indexer.index_of(node_id);
             let sg_node = SGNode::DropScopes;
             Ok((node_index, sg_node))
         }

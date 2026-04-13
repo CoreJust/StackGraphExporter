@@ -8,6 +8,7 @@ pub struct SGSymbol {
     pub real: bool, // Reference or definition
     pub file: Option<SGFileIndex>,
     pub line: Option<usize>,
+    pub column: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

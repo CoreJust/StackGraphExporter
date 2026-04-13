@@ -135,13 +135,21 @@ impl<'a> KotlinGrammarGenerator<'a> {
     ) {
         let mut indices: Vec<_> = name_map.keys().copied().collect();
         indices.sort();
+        let mut had_placeholder = false;
         for idx in indices {
             let var_name = &name_map[&idx];
             if idx == start_index {
-                kt_lines.push(format!("\tval {} by Nt().asStart()", var_name));
+                kt_lines.push(format!(
+                    "\tval {} by Nt().asStart() // <placeholder nt=\"{0}\"/>",
+                    var_name
+                ));
+                had_placeholder = true;
             } else {
                 kt_lines.push(format!("\tval {} by Nt()", var_name));
             }
+        }
+        if !had_placeholder {
+            crate::error!("No start non-terminal index in grammar");
         }
         kt_lines.push("".to_string());
     }

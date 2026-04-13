@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use stack_graphs::graph::StackGraph;
 use tree_sitter_stack_graphs::NoCancellation;
@@ -16,7 +16,7 @@ pub fn load_stack_graph<F>(
     project_dir: &Path,
     language: &Language,
     mut progress: F,
-) -> Result<StackGraph>
+) -> Result<(StackGraph, Duration)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
@@ -35,7 +35,7 @@ where
         progress(ProgressEvent::Done {
             elapsed: start_time.elapsed(),
         })?;
-        return Ok(StackGraph::new());
+        return Ok((StackGraph::new(), start_time.elapsed()));
     }
 
     let (rx, builder_handle) = spawn_parallel_build(
@@ -56,5 +56,5 @@ where
         elapsed: start_time.elapsed(),
     })?;
 
-    Ok(final_graph)
+    Ok((final_graph, start_time.elapsed()))
 }

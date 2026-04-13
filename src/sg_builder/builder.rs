@@ -4,12 +4,13 @@ use super::progress_event::ProgressEvent;
 use super::resolver::resolve_push_scoped;
 use crate::core::{SGGraph, SGNodeId};
 use crate::error::Result;
+use crate::sg_builder::parsers::Indexers;
 use stack_graphs::arena::Handle;
 use stack_graphs::graph::{Node as StackGraphNode, StackGraph};
 use stack_graphs::partial::PartialPaths;
 use stack_graphs::stitching::Database;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const PROGRESS_ONCE_IN_N_NODES: usize = 128;
 const PROGRESS_ONCE_IN_N_EDGES: usize = 128;
@@ -19,6 +20,7 @@ pub struct StackGraphContext {
     pub sggraph: SGGraph,
     pub node_handle_map: HashMap<SGNodeId, Handle<StackGraphNode>>,
     pub database: Option<(Database, PartialPaths)>,
+    pub database_built_in: Option<Duration>,
 }
 
 pub fn build_sggraph<F>(graph: StackGraph, mut progress: F) -> Result<StackGraphContext>
@@ -57,9 +59,11 @@ where
         }
         let (node_index, sg_node) = parse_node(
             node,
-            &mut node_id_indexer,
-            &mut symbol_indexer,
-            &mut file_indexer,
+            Indexers {
+                node_id_indexer: &mut node_id_indexer,
+                symbol_indexer: &mut symbol_indexer,
+                file_indexer: &mut file_indexer,
+            },
         )?;
         let idx = node_index as usize;
         if nodes.len() <= idx {
@@ -115,5 +119,6 @@ where
         sggraph,
         node_handle_map,
         database: None,
+        database_built_in: None,
     })
 }

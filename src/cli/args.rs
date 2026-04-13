@@ -87,6 +87,8 @@ pub struct OpenArgs {
     pub symbol: Option<String>,
     #[arg(long)]
     pub source: Option<String>,
+    #[arg(long)]
+    pub pick_queries: Option<u32>,
 
     // Path to the project root
     pub path: PathBuf,

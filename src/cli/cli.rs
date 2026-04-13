@@ -18,6 +18,15 @@ pub fn run() -> Result<()> {
 fn run_open(args: OpenArgs) -> Result<()> {
     let symbol = args.symbol.clone();
     let source = args.source.clone();
+    let pick_queries = args.pick_queries.clone();
+    let immediates_count: u32 = [symbol.is_some(), source.is_some(), pick_queries.is_some()]
+        .iter()
+        .map(|&some| if some { 1 } else { 0 })
+        .sum();
+    if immediates_count > 1 {
+        return Err(Error::InvalidArgument("Can only have one immediate query argument at a time, but {immediates_count} were given".into()));
+    }
+
     let path = args.path.clone();
 
     let engine = Engine::new(args);
@@ -44,13 +53,16 @@ fn run_open(args: OpenArgs) -> Result<()> {
 
         let node_idx = processor.engine.find_node_at_source(&file, line, col)?;
         commands.push(Command::QueryNode { node: node_idx });
+    } else if let Some(count) = pick_queries {
+        commands.push(Command::Create { artifact: None });
+        commands.push(Command::PickQueries { count });
     }
 
     for cmd in commands {
         processor.process(cmd)?;
     }
 
-    if symbol.is_none() && source.is_none() {
+    if immediates_count == 0 {
         crate::cli::interactive::run_interactive(processor)?;
     }
 

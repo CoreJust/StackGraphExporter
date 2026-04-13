@@ -15,13 +15,19 @@ pub enum ProgressEvent<'a> {
     NodesAtPartialStartsIndexed {
         elapsed: Duration,
     },
-    LookingForReferences {
+    LookingForSymbolReferences {
         elapsed_and_count: ElapsedAndCount,
         symbol: &'a str,
     },
-    FoundReferences {
+    LookingForReferences(ElapsedAndCount),
+    FoundSymbolReferences {
         elapsed: Duration,
         symbol: &'a str,
+        found_refs: usize,
+        found_defs: usize,
+    },
+    FoundReferences {
+        elapsed: Duration,
         found_refs: usize,
         found_defs: usize,
     },
@@ -31,6 +37,12 @@ pub enum ProgressEvent<'a> {
     PathsStitched {
         elapsed: Duration,
     },
+    ResolvingSymbols {
+        elapsed_and_processed: ElapsedAndCount,
+        found_resolvable_refs: usize,
+        needed_at_most: u32,
+    },
+    RetryingQueries(ElapsedAndCount),
 }
 
 impl<'a> fmt::Display for ProgressEvent<'a> {
@@ -57,10 +69,13 @@ impl<'a> fmt::Display for ProgressEvent<'a> {
             ProgressEvent::NodesAtPartialStartsIndexed { .. } => {
                 write!(f, "Indexed nodes at partial path start")
             }
-            ProgressEvent::LookingForReferences { symbol, .. } => {
+            ProgressEvent::LookingForSymbolReferences { symbol, .. } => {
                 write!(f, "Looking for references for symbol '{symbol}'")
             }
-            ProgressEvent::FoundReferences {
+            ProgressEvent::LookingForReferences { .. } => {
+                write!(f, "Looking for references")
+            }
+            ProgressEvent::FoundSymbolReferences {
                 symbol,
                 found_defs,
                 found_refs,
@@ -68,11 +83,34 @@ impl<'a> fmt::Display for ProgressEvent<'a> {
             } => {
                 write!(f, "Found {found_refs} references and {found_defs} definitions for symbol '{symbol}'")
             }
+            ProgressEvent::FoundReferences {
+                found_defs,
+                found_refs,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Found {found_refs} references and {found_defs} definitions",
+                )
+            }
             ProgressEvent::StitchingPaths { .. } => {
                 write!(f, "Stitching paths")
             }
             ProgressEvent::PathsStitched { .. } => {
                 write!(f, "Paths stitched successfully")
+            }
+            ProgressEvent::ResolvingSymbols {
+                found_resolvable_refs,
+                needed_at_most,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Resolving symbols ({found_resolvable_refs} resolvable references found / {needed_at_most} needed at most)"
+                )
+            }
+            ProgressEvent::RetryingQueries(_) => {
+                write!(f, "Retrying queries for more precise duration")
             }
         }
     }
@@ -102,9 +140,15 @@ impl<'a> IOProgressEvent for ProgressEvent<'a> {
             ProgressEvent::NodesAtPartialStartsIndexed { elapsed } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
             }
-            ProgressEvent::LookingForReferences {
+            ProgressEvent::LookingForSymbolReferences {
                 elapsed_and_count, ..
             } => ProgressState::from_elapsed_and_count(elapsed_and_count),
+            ProgressEvent::LookingForReferences(elapsed_and_count) => {
+                ProgressState::from_elapsed_and_count(elapsed_and_count)
+            }
+            ProgressEvent::FoundSymbolReferences { elapsed, .. } => {
+                ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
+            }
             ProgressEvent::FoundReferences { elapsed, .. } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
             }
@@ -113,6 +157,13 @@ impl<'a> IOProgressEvent for ProgressEvent<'a> {
             }
             ProgressEvent::PathsStitched { elapsed } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
+            }
+            ProgressEvent::ResolvingSymbols {
+                elapsed_and_processed,
+                ..
+            } => ProgressState::from_elapsed_and_count(elapsed_and_processed),
+            ProgressEvent::RetryingQueries(elapsed_and_count) => {
+                ProgressState::from_elapsed_and_count(elapsed_and_count)
             }
         }
     }

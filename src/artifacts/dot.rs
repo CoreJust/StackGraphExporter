@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
+use crate::core::{CFLGraph, CFLSymbol, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
 
 pub trait ToDOT {
@@ -132,21 +132,23 @@ impl ToDOT for CFLGraph {
         }
 
         dot_lines.push("}".to_string());
-        /*for rule in &self.rules {
-            dot_lines.push(format!(
-                "// {} := {}",
-                &self.symbols[rule.from_non_terminal],
-                rule.to
-                    .iter()
-                    .map(|s| self.symbols[match s {
-                        crate::types::CFLSymbol::Terminal(i) => *i,
-                        crate::types::CFLSymbol::NonTerminal(i) => *i,
-                    }]
-                    .clone())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ));
-        }*/
+        if !clean_dot {
+            for rule in &self.rules {
+                dot_lines.push(format!(
+                    "// {} := {}",
+                    &self.symbols[rule.from_non_terminal],
+                    rule.to
+                        .iter()
+                        .map(|s| self.symbols[match s {
+                            CFLSymbol::Terminal(i) => *i,
+                            CFLSymbol::NonTerminal(i) => *i,
+                        }]
+                        .clone())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+        }
         dot_lines
     }
 }

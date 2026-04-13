@@ -1,9 +1,16 @@
-use std::path::PathBuf;
+use std::{
+    cmp::Reverse,
+    ffi::OsString,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use crate::{
     cli::engine::{ArtifactType, Engine},
-    core::SGNodeIndex,
+    core::{DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
     error::{Error, Result},
+    io::{ElapsedAndCount, ProgressRenderer},
+    sg_query::{ProgressEvent, ResolutionResult},
 };
 
 #[derive(Debug, Clone)]
@@ -33,6 +40,9 @@ pub enum Command {
     QueryNode {
         node: SGNodeIndex,
     },
+    PickQueries {
+        count: u32,
+    },
     State,
     Help,
     Exit,
@@ -57,6 +67,7 @@ impl CommandProcessor {
             Command::Clean { artifact } => self.cmd_clean(artifact),
             Command::QuerySymbol { symbol } => self.cmd_query_symbol(&symbol),
             Command::QueryNode { node } => self.cmd_query_node(node),
+            Command::PickQueries { count } => self.cmd_pick_queries(count),
             Command::State => self.cmd_state(),
             Command::Help => self.cmd_help(),
             Command::Exit => self.cmd_exit(),
@@ -193,7 +204,7 @@ impl CommandProcessor {
         let indices = indices.as_ref().unwrap();
         let mut unresolved = Vec::new();
         for (i, &node_idx) in indices.into_iter().enumerate() {
-            let defs = self.engine.resolve_reference(node_idx)?;
+            let defs = self.engine.resolve_reference(node_idx)?.defs;
             if defs.is_empty() {
                 unresolved.push((i, node_idx));
                 continue;
@@ -238,12 +249,12 @@ impl CommandProcessor {
     }
 
     fn cmd_query_node(&mut self, node: SGNodeIndex) -> Result<()> {
-        let defs = self.engine.resolve_reference(node)?;
+        let defs = self.engine.resolve_reference(node)?.defs;
         crate::info!("Node {} resolves to {} definitions:", node, defs.len());
         for def in defs {
             println!(
                 "  - {}:{}:{} local_id {}",
-                def.file, def.line, def.col, def.local_id
+                def.file, def.line, def.col, def.local_id,
             );
         }
 
@@ -261,13 +272,107 @@ impl CommandProcessor {
         Ok(())
     }
 
+    fn pick_symbols(&mut self, count: u32) -> Result<Vec<ResolutionResult>> {
+        let needed_at_most = count * 128;
+        let mut resolved_symbols = self.engine.query_all_symbols(needed_at_most)?;
+        resolved_symbols.sort_by_key(|s| Reverse(s.resolved_in));
+        let total_symbol = resolved_symbols.len();
+        Ok(if (count as usize) < total_symbol {
+            resolved_symbols
+                .into_iter()
+                .step_by(total_symbol / count as usize)
+                .collect()
+        } else {
+            resolved_symbols
+        })
+    }
+
+    fn with_file_name_appended(path: &PathBuf, suffix: &str) -> PathBuf {
+        let stem = path.file_stem().unwrap();
+        let ext = path.extension();
+
+        let mut new_file_name = OsString::from(stem);
+        new_file_name.push(suffix);
+        if let Some(ext) = ext {
+            new_file_name.push(".");
+            new_file_name.push(ext);
+        }
+
+        path.with_file_name(new_file_name)
+    }
+
+    fn cmd_pick_queries(&mut self, count: u32) -> Result<()> {
+        use std::fs::File;
+        use std::io::Write;
+
+        self.engine.generate_artifact(ArtifactType::Kt)?;
+        self.engine.simplify_cfl = false;
+        self.engine.generate_artifact(ArtifactType::DotUcfs)?;
+        self.engine.simplify_cfl = true;
+        let nonsimplified_cfl_path = self.engine.output_path(ArtifactType::DotUcfs);
+        self.engine.output_overrides.insert(
+            ArtifactType::DotUcfs,
+            Self::with_file_name_appended(&nonsimplified_cfl_path, "_simplified"),
+        );
+        self.engine.generate_artifact(ArtifactType::DotUcfs)?;
+
+        let resolved_symbols = self.pick_symbols(count)?;
+        self.engine.stats.queries = Vec::with_capacity(resolved_symbols.len());
+
+        let mut renderer = ProgressRenderer::new();
+        let start = Instant::now();
+        let total_symbols = resolved_symbols.len();
+        for (i, rs) in resolved_symbols.into_iter().enumerate() {
+            let mut durations = [Duration::ZERO; 7];
+            self.engine.retry_query_for_durations(&rs, &mut durations)?;
+            let cfl_index = self.engine.map_reference_nodes_to_cfl(&[rs.node_index])?;
+            self.engine.stats.queries.push(QueryStats {
+                symbol: SymbolStats {
+                    name: rs.name,
+                    sg_index: rs.node_index,
+                    cfl_index: cfl_index[0],
+                    file: rs.file,
+                    line: rs.line,
+                    column: rs.column,
+                },
+                resolved_to: rs
+                    .defs
+                    .into_iter()
+                    .map(|d| DefinitionStats {
+                        file: d.file,
+                        line: d.line,
+                        column: d.col,
+                    })
+                    .collect(),
+                resolution_time: durations.map(|d| d.as_millis() as u64),
+            });
+            renderer.render(&ProgressEvent::RetryingQueries(ElapsedAndCount {
+                current: i,
+                total: total_symbols,
+                elapsed: start.elapsed(),
+            }))?;
+        }
+
+        let mut sgeq = File::create(self.engine.output_dir.join("queries.sgeq"))?;
+        writeln!(
+            sgeq,
+            "{}",
+            serde_json::to_string(&self.engine.stats).unwrap()
+        )?;
+        Ok(())
+    }
+
     fn cmd_state(&self) -> Result<()> {
         crate::info!("Current configuration:");
         crate::info!("  Kotlin GLL enabled: {}", self.engine.kotgll_enabled);
         crate::info!("  UCFS enabled: {}", self.engine.ucfs_enabled);
         crate::info!("  Verify: {}", self.engine.verify);
         crate::info!("  All symbols: {}", self.engine.all_symbols);
-        crate::info!("  Simplify CFL: {}", self.engine.simplify_cfl);
+        crate::info!(
+            "  Simplify CFL: {} (already simplified? {})",
+            self.engine.simplify_cfl,
+            self.engine.cfl_graph_simplified,
+        );
         crate::info!("  Output directory: {}", self.engine.output_dir.display());
         crate::info!("  Artifact overrides: {:?}", self.engine.output_overrides);
         Ok(())

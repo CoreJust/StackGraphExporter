@@ -6,8 +6,9 @@ use crate::core::{
 };
 use crate::error::Result;
 use std::collections::HashMap;
+use std::time::Duration;
 
-fn get_symbol_of(node: &SGNode) -> Option<SGSymbolIndex> {
+pub fn get_symbol_of(node: &SGNode) -> Option<SGSymbolIndex> {
     match node {
         SGNode::Pop(s)
         | SGNode::Push(s)
@@ -211,7 +212,7 @@ pub fn convert_to_cfl<F>(
     sggraph: &SGGraph,
     simplify: bool,
     progress: F,
-) -> Result<(CFLGraph, HashMap<SGNodeIndex, CFLNodeIndex>)>
+) -> Result<(CFLGraph, HashMap<SGNodeIndex, CFLNodeIndex>, Duration)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
@@ -253,5 +254,9 @@ where
     };
 
     progress_monitor.emit(|e| ProgressEvent::Done(e))?;
-    Ok((cfl_graph, pop_sg_to_cfl_out))
+    Ok((
+        cfl_graph,
+        pop_sg_to_cfl_out,
+        progress_monitor.start.elapsed(),
+    ))
 }

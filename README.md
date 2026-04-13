@@ -142,6 +142,72 @@ For `--source` you have to specify full path to the symbol (`<path-to-file>:<lin
 
 For `--symbol` you have to specify symbol name and then you enter the query mode (see Query mode below), after which the app exits.
 
+```
+      --pick-queries <COUNT>
+```
+
+Immediately runs queries for a large amount of symbols and picks <COUNT> of them so that they produce more complex queries than on the average, then generates a stack graph exporter queries (SGEQ) file. If <COUNT> is greater than the number of symbols in the project, only the (number of symbols) are generated.
+
+Incompatible with other immediate queries.
+
+Stores the output in ./queries.sgeq in the format of:
+
+```
+{
+  "project_path": "<path to the project root>",
+  "stack_graph": {
+    "built_in": <duration in milliseconds>,
+    "vertices": <vertices count in the graph>,
+    "edges": <edges count in the graph>,
+    "symbols": <symbols count in the graph>,
+  },
+  "partial_database_built_in": <duration in milliseconds>,
+  "cfl_graph": {
+    "path": "<path to the generated graph file>",
+    "built_in": <duration in milliseconds>, // includes grammar build time
+    "file_size": <graph file size in bytes>,
+    "vertices": <vertices count in the graph>,
+    "edges": <edges count in the graph>
+  },
+  "cfl_graph_simplified": {
+    "path": "<path to the generated graph file>",
+    "built_in": <duration in milliseconds>, // includes grammar build time
+    "file_size": <graph file size in bytes>,
+    "vertices": <vertices count in the graph>,
+    "edges": <edges count in the graph>
+  },
+  "cfl_grammar": {
+    "path": "<path to the generated grammar file>",
+    "file_size": <grammar file size in bytes>,
+    "rules": <rules count in the grammar>
+  },
+  "queries": [
+    {
+      "symbol": {
+        "name": "<symbol name>",
+        "sg_index": <node index in sggraph>,
+        "cfl_index": <node index in cfl graph (the one you need to make queries)>,
+        "file": "<the file the symbol is located at>",
+        "line": <the line the symbol is located at within the file>,
+        "column": <the column the symbol is located at within the line>
+      },
+      "resolved_to": [
+        {
+          <file, line, column as in symbol above>
+        },
+        ...
+      ],
+      "resolution_time": [ <list of resolution duration in milliseconds, 7 items> ]
+    },
+    ...
+  ]
+}
+```
+
+For grammar files a placeholder is added: `<placeholder nt=\"{start_symbol}\"/>`. To query some symbol `X` you need to remove .asStart() from that line if it's there and add a new line `val Q by Nt(Term(\"push_{X}\") * {start_symbol} * Term(\"pop_{X}\")).asStart()` right before or after the line with placeholder.
+
+For graph files, there is no need for a placeholder. Just add one or more lines `start -> {n};` after `{` to run queries from nodes with index `{n}` (or do not add those to run the query against the whole graph).
+
 8. Other flags:
 ```
       --verify

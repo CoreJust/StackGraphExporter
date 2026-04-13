@@ -128,7 +128,7 @@ impl Engine {
         let mut renderer = ProgressRenderer::new();
         let (graph, built_in) = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
         self.stack_graph = Some(graph);
-        self.stats.stack_gtaph.built_in = built_in.as_millis() as u64;
+        self.stats.stack_graph.built_in = built_in.as_millis() as u64;
         self.stats.project_path = path.display().to_string();
         Ok(())
     }
@@ -152,9 +152,9 @@ impl Engine {
                 ctx.sggraph.edges.len(),
                 ctx.sggraph.symbols.len(),
             );
-            self.stats.stack_gtaph.vertices = ctx.sggraph.nodes.len();
-            self.stats.stack_gtaph.edges = ctx.sggraph.edges.len();
-            self.stats.stack_gtaph.symbols = ctx.sggraph.symbols.len();
+            self.stats.stack_graph.vertices = ctx.sggraph.nodes.len();
+            self.stats.stack_graph.edges = ctx.sggraph.edges.len();
+            self.stats.stack_graph.symbols = ctx.sggraph.symbols.len();
             self.context = Some(ctx);
         }
         Ok(self.context.as_mut().unwrap())
@@ -215,7 +215,15 @@ impl Engine {
         for (i, r) in refs.into_iter().enumerate() {
             let resolution_result = ctx.resolve_reference(r, |_| Ok(()))?;
             if !resolution_result.defs.is_empty() {
-                result.push(resolution_result);
+                let second_resolution_result = ctx.resolve_reference(r, |_| Ok(()))?;
+                result.push(
+                    // Ensure more stable results
+                    if second_resolution_result.resolved_in < resolution_result.resolved_in {
+                        second_resolution_result
+                    } else {
+                        resolution_result
+                    },
+                );
                 renderer.render(&ProgressEvent::ResolvingSymbols {
                     elapsed_and_processed: ElapsedAndCount {
                         current: i,

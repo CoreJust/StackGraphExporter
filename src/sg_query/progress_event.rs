@@ -43,6 +43,7 @@ pub enum ProgressEvent<'a> {
         needed_at_most: u32,
     },
     RetryingQueries(ElapsedAndCount),
+    PickedQueries(ElapsedAndCount),
 }
 
 impl<'a> fmt::Display for ProgressEvent<'a> {
@@ -112,6 +113,9 @@ impl<'a> fmt::Display for ProgressEvent<'a> {
             ProgressEvent::RetryingQueries(_) => {
                 write!(f, "Retrying queries for more precise duration")
             }
+            ProgressEvent::PickedQueries(_) => {
+                write!(f, "Picked queries")
+            }
         }
     }
 }
@@ -164,6 +168,9 @@ impl<'a> IOProgressEvent for ProgressEvent<'a> {
             } => ProgressState::from_elapsed_and_count(elapsed_and_processed, false),
             ProgressEvent::RetryingQueries(elapsed_and_count) => {
                 ProgressState::from_elapsed_and_count(elapsed_and_count, false)
+            }
+            ProgressEvent::PickedQueries(elapsed_and_count) => {
+                ProgressState::from_elapsed_and_count(elapsed_and_count, true)
             }
         }
     }

@@ -185,8 +185,8 @@ Stores the output in ./queries.sgeq in the format of:
     {
       "symbol": {
         "name": "<symbol name>",
-        "sg_index": <node index in sggraph>,
-        "cfl_index": <node index in cfl graph (the one you need to make queries)>,
+        "cfl_index": <node index in CFL graph (the one you need to make queries)>,
+        "cfl_index_simplified": <node index in simplified CFL graph (the one you need to make queries)>,
         "file": "<the file the symbol is located at>",
         "line": <the line the symbol is located at within the file>,
         "column": <the column the symbol is located at within the line>
@@ -221,7 +221,7 @@ Enables verification. When verification is enabled and the query is done with Ko
 
 By default, in the query mode you you only see nodes which are at the beginning of at least one partial path. You can disable this behaviour with this flag and see all the nodes for the symbol you requested.
 
-**Note: even in medium-sized projects one symbol might have hundreds or thousands of nodes. Filtering them by having at least one partial path can reduce the number by several times. Emperically it was verified that nodes without partial paths are resolbed to nothing. But it must be further investigated.**
+*Note: even in medium-sized projects one symbol might have hundreds or thousands of nodes. Filtering them by having at least one partial path can reduce the number by several times. It was verified emperically that nodes without partial paths are resolbed to nothing. But it must be further investigated.*
 
 ```
       --simplify-cfl
@@ -251,6 +251,8 @@ state, s
 help, h
 quit, exit, halt
 ```
+
+*There is a known issue that UCFS artifacts might get corrupted upon sequential queries within same session. It can be solved with running a `clean`.*
 
 <TODO>
 

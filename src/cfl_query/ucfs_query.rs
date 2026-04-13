@@ -53,7 +53,7 @@ fn prepare_symbol_query_grammar(
     );
 
     // Insert the Q declaration
-    lines.insert(start_line_index, q_line);
+    lines.insert(start_line_index + 1, q_line);
 
     let new_content = lines.join("\n");
     write(query_grammar_path, new_content)?;

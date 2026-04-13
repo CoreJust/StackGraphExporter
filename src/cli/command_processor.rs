@@ -1,13 +1,16 @@
 use std::{
-    cmp::Reverse,
     ffi::OsString,
     path::PathBuf,
     time::{Duration, Instant},
 };
 
+use rand::prelude::*;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+
 use crate::{
     cli::engine::{ArtifactType, Engine},
-    core::{DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
+    core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
     error::{Error, Result},
     io::{ElapsedAndCount, ProgressRenderer},
     sg_query::{ProgressEvent, ResolutionResult},
@@ -273,15 +276,19 @@ impl CommandProcessor {
     }
 
     fn pick_symbols(&mut self, count: u32) -> Result<Vec<ResolutionResult>> {
-        let needed_at_most = count * 128;
-        let mut resolved_symbols = self.engine.query_all_symbols(needed_at_most)?;
-        resolved_symbols.sort_by_key(|s| Reverse(s.resolved_in));
+        let needed_at_most = count * 128; // Heuristic to get a sufficient number of queries to choose from yet not to take too much time
+        let resolved_symbols = self.engine.query_all_symbols(needed_at_most)?;
         let total_symbol = resolved_symbols.len();
         Ok(if (count as usize) < total_symbol {
+            let mut rng = StdRng::seed_from_u64(42);
             resolved_symbols
+                .choose_multiple_weighted(&mut rng, count as usize, |item| {
+                    item.resolved_in.as_millis() as f64
+                })
+                .map_err(|e| Error::Internal(format!("Weighted sampling failed: {e}")))?
                 .into_iter()
-                .step_by(total_symbol / count as usize)
-                .collect()
+                .cloned()
+                .collect::<Vec<_>>()
         } else {
             resolved_symbols
         })
@@ -329,8 +336,8 @@ impl CommandProcessor {
             self.engine.stats.queries.push(QueryStats {
                 symbol: SymbolStats {
                     name: rs.name,
-                    sg_index: rs.node_index,
-                    cfl_index: cfl_index[0],
+                    cfl_index: rs.node_index as CFLNodeIndex, // For non-simplified it is the same
+                    cfl_index_simplified: cfl_index[0],
                     file: rs.file,
                     line: rs.line,
                     column: rs.column,
@@ -359,12 +366,17 @@ impl CommandProcessor {
             "{}",
             serde_json::to_string(&self.engine.stats).unwrap()
         )?;
+        renderer.render(&ProgressEvent::PickedQueries(ElapsedAndCount {
+            current: total_symbols,
+            total: total_symbols,
+            elapsed: start.elapsed(),
+        }))?;
         Ok(())
     }
 
     fn cmd_state(&self) -> Result<()> {
         crate::info!("Current configuration:");
-        crate::info!("  Kotlin GLL enabled: {}", self.engine.kotgll_enabled);
+        crate::info!("  KotGLL enabled: {}", self.engine.kotgll_enabled);
         crate::info!("  UCFS enabled: {}", self.engine.ucfs_enabled);
         crate::info!("  Verify: {}", self.engine.verify);
         crate::info!("  All symbols: {}", self.engine.all_symbols);
@@ -385,6 +397,7 @@ impl CommandProcessor {
         crate::info!("  disable <feature> (alternative: d)");
         crate::info!("  output [artifact] <path> (alternative: o)");
         crate::info!("  create <artifact> (alternative: c)");
+        crate::info!("  clean <artifact>");
         crate::info!("  query <symbol> (alternative: q, r, run)");
         crate::info!("  state (alternative: s)");
         crate::info!("  help (alternative: h)");

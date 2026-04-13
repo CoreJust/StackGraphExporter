@@ -1,78 +1,135 @@
 use crate::{
-    artifacts::grammar_kt_pieces::*,
+    artifacts::{grammar_kt_pieces::*, progress_event::ProgressEvent},
     core::{CFLGraph, CFLSymbol},
     error::Result,
+    io::ElapsedAndCount,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    time::Instant,
+};
+
+const WRITE_ONCE_IN_N: usize = 64;
 
 pub trait ToKTGrammar {
-    fn to_kotlin_lines(&self, class_name: &str) -> Vec<String>;
+    fn to_kotlin_lines<F>(&self, class_name: &str, progress: &mut F) -> Result<Vec<String>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>;
 
-    fn write_to_kotlin_file(&self, out_path: &PathBuf, class_name: &str) -> Result<()> {
+    fn write_to_kotlin_file<F>(
+        &self,
+        out_path: &PathBuf,
+        class_name: &str,
+        mut progress: F,
+    ) -> Result<()>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
         let mut file = File::create(out_path)?;
-        let kt = self.to_kotlin_lines(class_name);
-        for line in kt {
-            writeln!(file, "{}", line)?;
+        let start = Instant::now();
+        let kt = self.to_kotlin_lines(class_name, &mut progress)?;
+        let total_lines = kt.len();
+        for (i, line) in kt.into_iter().enumerate() {
+            writeln!(file, "{line}")?;
+            if i % WRITE_ONCE_IN_N == 0 {
+                progress(ProgressEvent::WritingLines {
+                    elapsed_and_count: ElapsedAndCount {
+                        current: i,
+                        total: total_lines,
+                        elapsed: start.elapsed(),
+                    },
+                    artifact_name: "Kotlin Grammar",
+                })?;
+            }
         }
-        Ok(())
+        progress(ProgressEvent::ArtifactStored {
+            elapsed_and_count: ElapsedAndCount {
+                current: total_lines,
+                total: total_lines,
+                elapsed: start.elapsed(),
+            },
+            artifact_name: "Kotlin Grammar",
+        })
     }
 }
 
 impl ToKTGrammar for CFLGraph {
-    fn to_kotlin_lines(&self, class_name: &str) -> Vec<String> {
-        KotlinGrammarGenerator::new(self, class_name).generate()
+    fn to_kotlin_lines<F>(&self, class_name: &str, progress: &mut F) -> Result<Vec<String>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        KotlinGrammarGenerator::new(self, class_name, progress).generate()
     }
 }
 
-struct KotlinGrammarGenerator<'a> {
+struct KotlinGrammarGenerator<'a, F>
+where
+    F: FnMut(ProgressEvent) -> Result<()>,
+{
     graph: &'a CFLGraph,
     class_name: &'a str,
+    progress: &'a mut F,
+    start: Instant,
 }
 
-impl<'a> KotlinGrammarGenerator<'a> {
-    fn new(graph: &'a CFLGraph, class_name: &'a str) -> Self {
-        Self { graph, class_name }
+impl<'a, F> KotlinGrammarGenerator<'a, F>
+where
+    F: FnMut(ProgressEvent) -> Result<()>,
+{
+    fn new(graph: &'a CFLGraph, class_name: &'a str, progress: &'a mut F) -> Self {
+        Self {
+            graph,
+            class_name,
+            progress,
+            start: Instant::now(),
+        }
     }
 
-    fn generate(&self) -> Vec<String> {
-        let non_terminal_indices = self.collect_non_terminal_indices();
-        let name_map = self.build_name_map(&non_terminal_indices);
+    fn generate(&mut self) -> Result<Vec<String>> {
+        let non_terminal_indices = self.collect_non_terminal_indices()?;
+        let name_map = self.build_name_map(&non_terminal_indices)?;
         let start_index = self.find_start_index(&non_terminal_indices);
-        let productions = self.collect_productions();
+        let productions = self.collect_productions()?;
         let mut kt_lines = vec![KT_GRAMMAR_HEADER.to_string()];
         self.append_class_declaration(&mut kt_lines);
-        Self::append_non_terminal_declarations(&mut kt_lines, &name_map, start_index);
-        self.append_helper_functions(&mut kt_lines, &name_map);
-        self.append_init_block(&mut kt_lines, &productions, &name_map);
+        self.append_non_terminal_declarations(&mut kt_lines, &name_map, start_index)?;
+        self.append_helper_functions(&mut kt_lines, &name_map)?;
+        self.append_init_block(&mut kt_lines, &productions, &name_map)?;
 
         kt_lines.push("}".to_string());
-        kt_lines
+        Ok(kt_lines)
     }
 
-    fn collect_non_terminal_indices(&self) -> BTreeSet<usize> {
+    fn collect_non_terminal_indices(&mut self) -> Result<BTreeSet<usize>> {
         let mut indices = BTreeSet::new();
-        for rule in &self.graph.rules {
+        for (i, rule) in self.graph.rules.iter().enumerate() {
             indices.insert(rule.from_non_terminal);
             for symbol in &rule.to {
                 if let CFLSymbol::NonTerminal(nt) = symbol {
                     indices.insert(*nt);
                 }
             }
+            (self.progress)(ProgressEvent::GeneratingArtifact {
+                elapsed: self.start.elapsed(),
+                progress: Some((i, self.graph.rules.len())),
+                message: "Collecting non-terminal indices".into(),
+            })?;
         }
         if indices.is_empty() && !self.graph.symbols.is_empty() {
             indices.insert(0);
         }
-        indices
+        Ok(indices)
     }
 
-    fn build_name_map(&self, indices: &BTreeSet<usize>) -> HashMap<usize, String> {
+    fn build_name_map(&mut self, indices: &BTreeSet<usize>) -> Result<HashMap<usize, String>> {
         let mut name_map = HashMap::new();
         let mut used_names = HashSet::new();
 
-        for &idx in indices {
+        let total_indices = indices.len();
+        for (i, &idx) in indices.into_iter().enumerate() {
             let raw_name = &self.graph.symbols[idx];
             let mut candidate = Self::sanitize_ident(raw_name, idx);
             let mut suffix = 1;
@@ -82,8 +139,13 @@ impl<'a> KotlinGrammarGenerator<'a> {
             }
             used_names.insert(candidate.clone());
             name_map.insert(idx, candidate);
+            (self.progress)(ProgressEvent::GeneratingArtifact {
+                elapsed: self.start.elapsed(),
+                progress: Some((i, total_indices)),
+                message: "Building name map".into(),
+            })?;
         }
-        name_map
+        Ok(name_map)
     }
 
     fn sanitize_ident(s: &str, fallback_idx: usize) -> String {
@@ -113,15 +175,20 @@ impl<'a> KotlinGrammarGenerator<'a> {
             .unwrap_or_else(|| *indices.first().unwrap())
     }
 
-    fn collect_productions(&self) -> BTreeMap<usize, Vec<Vec<CFLSymbol>>> {
+    fn collect_productions(&mut self) -> Result<BTreeMap<usize, Vec<Vec<CFLSymbol>>>> {
         let mut productions = BTreeMap::new();
-        for rule in &self.graph.rules {
+        for (i, rule) in self.graph.rules.iter().enumerate() {
             productions
                 .entry(rule.from_non_terminal)
                 .or_insert_with(Vec::new)
                 .push(rule.to.clone());
+            (self.progress)(ProgressEvent::GeneratingArtifact {
+                elapsed: self.start.elapsed(),
+                progress: Some((i, self.graph.rules.len())),
+                message: "Collecting productions".into(),
+            })?;
         }
-        productions
+        Ok(productions)
     }
 
     fn append_class_declaration(&self, kt_lines: &mut Vec<String>) {
@@ -129,14 +196,16 @@ impl<'a> KotlinGrammarGenerator<'a> {
     }
 
     fn append_non_terminal_declarations(
+        &mut self,
         kt_lines: &mut Vec<String>,
         name_map: &HashMap<usize, String>,
         start_index: usize,
-    ) {
+    ) -> Result<()> {
         let mut indices: Vec<_> = name_map.keys().copied().collect();
         indices.sort();
         let mut had_placeholder = false;
-        for idx in indices {
+        let total_indices = indices.len();
+        for (i, idx) in indices.into_iter().enumerate() {
             let var_name = &name_map[&idx];
             if idx == start_index {
                 kt_lines.push(format!(
@@ -147,53 +216,76 @@ impl<'a> KotlinGrammarGenerator<'a> {
             } else {
                 kt_lines.push(format!("\tval {} by Nt()", var_name));
             }
+            (self.progress)(ProgressEvent::GeneratingArtifact {
+                elapsed: self.start.elapsed(),
+                progress: Some((i, total_indices)),
+                message: "Appending non-terminal declarations".into(),
+            })?;
         }
         if !had_placeholder {
             crate::error!("No start non-terminal index in grammar");
         }
         kt_lines.push("".to_string());
+        Ok(())
     }
 
     fn append_helper_functions(
-        &self,
+        &mut self,
         kt_lines: &mut Vec<String>,
         name_map: &HashMap<usize, String>,
-    ) {
+    ) -> Result<()> {
         kt_lines.push(KT_GRAMMAR_PARSE_PRODUCTION_DATA.to_string());
 
         let mut indices: Vec<_> = name_map.keys().copied().collect();
         indices.sort();
+        (self.progress)(ProgressEvent::GeneratingArtifact {
+            elapsed: self.start.elapsed(),
+            progress: None,
+            message: "Appending helper functions".into(),
+        })?;
         kt_lines.push(kt_grammar_get_nt(
             indices
                 .into_iter()
                 .map(|idx| &name_map[&idx])
                 .collect::<Vec<_>>(),
         ));
+        Ok(())
     }
 
     fn append_init_block(
-        &self,
+        &mut self,
         kt_lines: &mut Vec<String>,
         productions: &BTreeMap<usize, Vec<Vec<CFLSymbol>>>,
         name_map: &HashMap<usize, String>,
-    ) {
+    ) -> Result<()> {
         kt_lines.push("\tinit {".to_string());
+        (self.progress)(ProgressEvent::GeneratingArtifact {
+            elapsed: self.start.elapsed(),
+            progress: None,
+            message: "Appending init block".into(),
+        })?;
 
         kt_lines.push("\t\tval productionData = \"\"\"".to_string());
-        self.append_production_data(kt_lines, productions, name_map);
+        self.append_production_data(kt_lines, productions, name_map)?;
         kt_lines.push("\t\t\"\"\".trimIndent()\n".to_string());
 
         let nt_names: Vec<String> = name_map.values().cloned().collect();
         kt_lines.push(kt_grammar_productions_map_build(nt_names));
         kt_lines.push("\t}".to_string());
+        Ok(())
     }
 
     fn append_production_data(
-        &self,
+        &mut self,
         kt_lines: &mut Vec<String>,
         productions: &BTreeMap<usize, Vec<Vec<CFLSymbol>>>,
         name_map: &HashMap<usize, String>,
-    ) {
+    ) -> Result<()> {
+        (self.progress)(ProgressEvent::GeneratingArtifact {
+            elapsed: self.start.elapsed(),
+            progress: None,
+            message: "Appending production data".into(),
+        })?;
         for (&lhs_idx, alternatives) in productions {
             let lhs_name = &name_map[&lhs_idx];
             kt_lines.push(lhs_name.clone());
@@ -219,6 +311,7 @@ impl<'a> KotlinGrammarGenerator<'a> {
             }
             kt_lines.push(String::new());
         }
+        Ok(())
     }
 
     fn format_symbol(&self, symbol: &CFLSymbol, name_map: &HashMap<usize, String>) -> String {

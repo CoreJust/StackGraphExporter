@@ -101,22 +101,22 @@ impl IOProgressEvent for ProgressEvent {
     fn state(&self) -> crate::io::ProgressState {
         match self {
             ProgressEvent::BuildingSymbolRules(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingOutIds(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingForCurrentEdges(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingSymbolEdges(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingNodeMetadata(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingPopNodesMapping(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::SimplifyingGraph { elapsed, .. } => ProgressState {
                 is_final: false,

@@ -3,6 +3,7 @@ mod dot;
 mod grammar_cfg;
 mod grammar_kt;
 mod grammar_kt_pieces;
+mod progress_event;
 
 pub use csv::ToCSV;
 pub use dot::ToDOT;

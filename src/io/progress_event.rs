@@ -42,9 +42,9 @@ impl ProgressState {
         }
     }
 
-    pub fn from_elapsed_and_count(elapsed_and_count: &ElapsedAndCount) -> Self {
+    pub fn from_elapsed_and_count(elapsed_and_count: &ElapsedAndCount, is_final: bool) -> Self {
         Self {
-            is_final: false,
+            is_final,
             elapsed: elapsed_and_count.elapsed,
             progress: if elapsed_and_count.total != 0 {
                 elapsed_and_count.current as f32 / elapsed_and_count.total as f32

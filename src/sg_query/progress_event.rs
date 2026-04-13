@@ -120,31 +120,31 @@ impl<'a> IOProgressEvent for ProgressEvent<'a> {
     fn state(&self) -> ProgressState {
         match self {
             ProgressEvent::BuildingDatabase(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::DatabaseBuilt { elapsed } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
             }
             ProgressEvent::FindingPartialStarts(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingNodeIdToPositionIndex(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::BuildingNodeHandleToPositionIndex(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::CollectingNodesAtPartialStarts(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::NodesAtPartialStartsIndexed { elapsed } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
             }
             ProgressEvent::LookingForSymbolReferences {
                 elapsed_and_count, ..
-            } => ProgressState::from_elapsed_and_count(elapsed_and_count),
+            } => ProgressState::from_elapsed_and_count(elapsed_and_count, false),
             ProgressEvent::LookingForReferences(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
             ProgressEvent::FoundSymbolReferences { elapsed, .. } => {
                 ProgressState::from_elapsed(&Elapsed { elapsed: *elapsed }, true)
@@ -161,9 +161,9 @@ impl<'a> IOProgressEvent for ProgressEvent<'a> {
             ProgressEvent::ResolvingSymbols {
                 elapsed_and_processed,
                 ..
-            } => ProgressState::from_elapsed_and_count(elapsed_and_processed),
+            } => ProgressState::from_elapsed_and_count(elapsed_and_processed, false),
             ProgressEvent::RetryingQueries(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count)
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
         }
     }

@@ -84,7 +84,6 @@ impl Engine {
             overrides.insert(ArtifactType::Json, p);
         }
 
-        let project_path = output_dir.display().to_string();
         Self {
             stack_graph: None,
             remove_unsupported: args.remove_unsupported,
@@ -107,7 +106,6 @@ impl Engine {
             kotgll_path: args.kotgll_path,
             generated_artifacts: HashMap::new(),
             stats: Stats {
-                project_path,
                 ..Default::default()
             },
             context: None,
@@ -131,6 +129,7 @@ impl Engine {
         let (graph, built_in) = load_stack_graph(path, &self.language, |e| renderer.render(&e))?;
         self.stack_graph = Some(graph);
         self.stats.stack_gtaph.built_in = built_in.as_millis() as u64;
+        self.stats.project_path = path.display().to_string();
         Ok(())
     }
 
@@ -523,11 +522,14 @@ impl Engine {
             }
             ArtifactType::Dot => {
                 let ctx = self.ensure_context()?;
-                ctx.sggraph.write_to_dot_file(&path, false)?;
+                let mut renderer = ProgressRenderer::new();
+                ctx.sggraph
+                    .write_to_dot_file(&path, false, |e| renderer.render(&e))?;
             }
             ArtifactType::DotUcfs => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_dot_file(&path, true)?;
+                let mut renderer = ProgressRenderer::new();
+                cfl.write_to_dot_file(&path, true, |e| renderer.render(&e))?;
                 let cfl_stats = if self.cfl_graph_simplified {
                     &mut self.stats.cfl_graph_simplified
                 } else {
@@ -538,7 +540,8 @@ impl Engine {
             }
             ArtifactType::Kt => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_kotlin_file(&path, "UCFSGrammar")?;
+                let mut renderer = ProgressRenderer::new();
+                cfl.write_to_kotlin_file(&path, "UCFSGrammar", |e| renderer.render(&e))?;
                 self.stats.cfl_grammar.path = path.display().to_string();
                 self.stats.cfl_grammar.file_size =
                     std::fs::metadata(&self.stats.cfl_grammar.path)?.len();

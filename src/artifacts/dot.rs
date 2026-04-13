@@ -1,20 +1,57 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::Instant;
 
+use crate::artifacts::progress_event::ProgressEvent;
 use crate::core::{CFLGraph, CFLSymbol, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
+use crate::io::ElapsedAndCount;
+
+const WRITE_ONCE_IN_N: usize = 64;
 
 pub trait ToDOT {
-    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String>;
+    const ARTIFACT_NAME: &'static str;
 
-    fn write_to_dot_file(self: &Self, out_path: &PathBuf, clean_dot: bool) -> Result<()> {
+    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>;
+
+    fn write_to_dot_file<F>(
+        self: &Self,
+        out_path: &PathBuf,
+        clean_dot: bool,
+        mut progress: F,
+    ) -> Result<()>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        let start = Instant::now();
         let mut out_file = File::create(&out_path)?;
+        let dot = self.to_dot_lines(clean_dot, &mut progress)?;
+        let total_lines = dot.len();
 
-        for line in self.to_dot_lines(clean_dot).into_iter() {
-            writeln!(out_file, "{}", line)?;
+        for (i, line) in dot.into_iter().enumerate() {
+            writeln!(out_file, "{line}")?;
+            if i % WRITE_ONCE_IN_N == 0 {
+                progress(ProgressEvent::WritingLines {
+                    elapsed_and_count: ElapsedAndCount {
+                        current: i,
+                        total: total_lines,
+                        elapsed: start.elapsed(),
+                    },
+                    artifact_name: Self::ARTIFACT_NAME,
+                })?;
+            }
         }
-        Ok(())
+        progress(ProgressEvent::ArtifactStored {
+            elapsed_and_count: ElapsedAndCount {
+                current: total_lines,
+                total: total_lines,
+                elapsed: start.elapsed(),
+            },
+            artifact_name: Self::ARTIFACT_NAME,
+        })
     }
 }
 
@@ -86,7 +123,13 @@ fn make_node_name(
 }
 
 impl ToDOT for SGGraph {
-    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String> {
+    const ARTIFACT_NAME: &'static str = "Stack Graph DOT";
+
+    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        let start = Instant::now();
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
         if !clean_dot {
@@ -98,19 +141,39 @@ impl ToDOT for SGGraph {
             let node_name = make_node_name(&self.ids, &id, &self.symbols, &self.files, &node);
             let node_name = esc_dot_label(&node_name);
             dot_lines.push(format!("  {} [label=\"{}\"];", i, node_name));
+            if i % WRITE_ONCE_IN_N == 0 {
+                progress(ProgressEvent::GeneratingArtifact {
+                    elapsed: start.elapsed(),
+                    progress: Some((i, self.nodes.len())),
+                    message: "Generating Stack Graph DOT nodes".into(),
+                })?;
+            }
         }
 
-        for edge in &self.edges {
+        for (i, edge) in self.edges.iter().enumerate() {
             dot_lines.push(format!("  {} -> {};", edge.from, edge.to));
+            if i % WRITE_ONCE_IN_N == 0 {
+                progress(ProgressEvent::GeneratingArtifact {
+                    elapsed: start.elapsed(),
+                    progress: Some((i, self.edges.len())),
+                    message: "Generating Stack Graph DOT edges".into(),
+                })?;
+            }
         }
 
         dot_lines.push("}".to_string());
-        dot_lines
+        Ok(dot_lines)
     }
 }
 
 impl ToDOT for CFLGraph {
-    fn to_dot_lines(self: &Self, clean_dot: bool) -> Vec<String> {
+    const ARTIFACT_NAME: &'static str = "CFL Graph DOT";
+
+    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        let start = Instant::now();
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
         if !clean_dot {
@@ -118,7 +181,7 @@ impl ToDOT for CFLGraph {
             dot_lines.push("  node [shape=box, fontsize=10];".to_string());
         }
 
-        for edge in &self.edges {
+        for (i, edge) in self.edges.iter().enumerate() {
             let label = edge
                 .symbol
                 .and_then(|s| {
@@ -128,12 +191,19 @@ impl ToDOT for CFLGraph {
                     ))
                 })
                 .unwrap_or(" [label = \"\"]".to_string());
-            dot_lines.push(format!("  {} -> {}{};", edge.from, edge.to, label,));
+            dot_lines.push(format!("  {} -> {}{};", edge.from, edge.to, label));
+            if i % WRITE_ONCE_IN_N == 0 {
+                progress(ProgressEvent::GeneratingArtifact {
+                    elapsed: start.elapsed(),
+                    progress: Some((i, self.edges.len())),
+                    message: "Generating CFL DOT edges".into(),
+                })?;
+            }
         }
 
         dot_lines.push("}".to_string());
         if !clean_dot {
-            for rule in &self.rules {
+            for (i, rule) in self.rules.iter().enumerate() {
                 dot_lines.push(format!(
                     "// {} := {}",
                     &self.symbols[rule.from_non_terminal],
@@ -147,8 +217,15 @@ impl ToDOT for CFLGraph {
                         .collect::<Vec<_>>()
                         .join(" ")
                 ));
+                if i % WRITE_ONCE_IN_N == 0 {
+                    progress(ProgressEvent::GeneratingArtifact {
+                        elapsed: start.elapsed(),
+                        progress: Some((i, self.rules.len())),
+                        message: "Generating CFL DOT rules comment".into(),
+                    })?;
+                }
             }
         }
-        dot_lines
+        Ok(dot_lines)
     }
 }

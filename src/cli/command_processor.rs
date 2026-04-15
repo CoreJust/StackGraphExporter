@@ -280,7 +280,7 @@ impl CommandProcessor {
         let resolved_symbols = self.engine.query_all_symbols(needed_at_most)?;
         let total_symbol = resolved_symbols.len();
         Ok(if (count as usize) < total_symbol {
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = StdRng::seed_from_u64(count as u64);
             resolved_symbols
                 .choose_multiple_weighted(&mut rng, count as usize, |item| {
                     item.resolved_in.as_millis() as f64

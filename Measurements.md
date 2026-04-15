@@ -28,6 +28,12 @@ To run it yourself you need to:
 
 Note that that all works on Windows only - for other systems you have to rewrite the run_sg_bench.ps1 to match the system or take the required commands from there and type them manually.
 
+For automatic query picking you can use `--pick-queries` (as described in README) to get the sgeq file and the intermediate artifacts, then use the scripts from UCFS:
+
+```
+python ./run_sgeq.py <path to the sgeq file> <path to the output MD file> [<path to UCFS root>, default ./]
+```
+
 ## Raw results
 
 Note that you cannot simply compare the results for Stack Graphs and UCFS - for Stack Graphs a significant part of the job is done beforehand during Partial Paths Database building.

@@ -1,7 +1,7 @@
 use super::simplify_graph;
 use crate::cfl_builder::progress_event::{ProgressEvent, ProgressMonitor};
 use crate::core::{
-    CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLRule, CFLSymbol, SGEdge, SGGraph, SGNode,
+    CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, CFLSymbolIndex, SGEdge, SGGraph, SGNode,
     SGNodeIndex, SGSymbol, SGSymbolIndex,
 };
 use crate::error::Result;
@@ -121,6 +121,7 @@ where
 fn generate_symbol_edges<F>(
     edges: &mut Vec<CFLEdge>,
     nodes: &[SGNode],
+    symbol_mapping: &Vec<CFLSymbolIndex>,
     out_indices: &HashMap<SGNodeIndex, CFLNodeIndex>,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<()>
@@ -131,9 +132,10 @@ where
     for (i, (in_idx, out_idx)) in out_indices.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingSymbolEdges(v))?;
         if let Some(symbol_idx) = get_symbol_of(&nodes[*in_idx as usize]) {
+            let cfl_rule_idx = symbol_mapping[symbol_idx];
             edges.push(CFLEdge {
                 symbol: Some(
-                    2 * symbol_idx
+                    2 * cfl_rule_idx
                         + if is_push_node(&nodes[*in_idx as usize]) {
                             0
                         } else {
@@ -150,6 +152,7 @@ where
 
 fn generate_edges<F>(
     sggraph: &SGGraph,
+    symbol_mapping: &Vec<CFLSymbolIndex>,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<(Vec<CFLEdge>, HashMap<SGNodeIndex, CFLNodeIndex>)>
 where
@@ -158,54 +161,39 @@ where
     let out_indices = generate_out_indices(&sggraph.nodes, progress)?;
     let mut edges =
         generate_for_current_edges(&sggraph.edges, &sggraph.nodes, &out_indices, progress)?;
-    generate_symbol_edges(&mut edges, &sggraph.nodes, &out_indices, progress)?;
+    generate_symbol_edges(
+        &mut edges,
+        &sggraph.nodes,
+        symbol_mapping,
+        &out_indices,
+        progress,
+    )?;
     Ok((edges, out_indices))
 }
 
-fn generate_symbols_rules<F>(
+fn generate_symbols<F>(
     symbols: &[SGSymbol],
     progress: &mut ProgressMonitor<F>,
-) -> Result<(Vec<String>, Vec<CFLRule>)>
+) -> Result<(Vec<CFLSymbolIndex>, usize)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    let mut rules = Vec::with_capacity(2 + symbols.len());
-    let mut cfl_symbols = Vec::with_capacity(1 + 2 * symbols.len());
-    let s_non_terminal = 2 * symbols.len();
+    let mut result = Vec::new();
+    let mut symbols_mapping = HashMap::new();
 
     progress.stage_total = symbols.len();
     for (i, symbol) in symbols.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingSymbolRules(v))?;
-        let id = cfl_symbols.len();
-        cfl_symbols.push(format!("push_{}", symbol.name));
-        cfl_symbols.push(format!("pop_{}", symbol.name));
-        // S := push_X S pop_X
-        rules.push(CFLRule {
-            from_non_terminal: s_non_terminal,
-            to: vec![
-                CFLSymbol::Terminal(id),
-                CFLSymbol::NonTerminal(s_non_terminal),
-                CFLSymbol::Terminal(id + 1),
-            ],
-        });
+        if let Some(cfl_idx) = symbols_mapping.get(&symbol.name) {
+            result.push(*cfl_idx);
+        } else {
+            let cfl_idx = symbols_mapping.len();
+            symbols_mapping.insert(&symbol.name, cfl_idx);
+            result.push(cfl_idx);
+        }
     }
 
-    cfl_symbols.push("S".to_string());
-    // S := epsilon
-    rules.push(CFLRule {
-        from_non_terminal: s_non_terminal,
-        to: vec![],
-    });
-    // S := S S
-    rules.push(CFLRule {
-        from_non_terminal: s_non_terminal,
-        to: vec![
-            CFLSymbol::NonTerminal(s_non_terminal),
-            CFLSymbol::NonTerminal(s_non_terminal),
-        ],
-    });
-
-    Ok((cfl_symbols, rules))
+    Ok((result, symbols_mapping.len()))
 }
 
 pub fn convert_to_cfl<F>(
@@ -217,8 +205,10 @@ where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     let mut progress_monitor = ProgressMonitor::new(progress);
-    let (symbols, rules) = generate_symbols_rules(&sggraph.symbols, &mut progress_monitor)?;
-    let (mut edges, out_indices) = generate_edges(sggraph, &mut progress_monitor)?;
+    let (sg_to_cfl_rule_index, sg_unique_symbols_count) =
+        generate_symbols(&sggraph.symbols, &mut progress_monitor)?;
+    let (mut edges, out_indices) =
+        generate_edges(sggraph, &sg_to_cfl_rule_index, &mut progress_monitor)?;
     let mut metadata = generate_node_metadata(
         &sggraph.symbols,
         &sggraph.nodes,
@@ -246,11 +236,11 @@ where
     }
 
     let cfl_graph = CFLGraph {
-        rules,
         edges,
-        symbols,
         metadata,
         files: sggraph.files.clone(),
+        sg_to_cfl_rule_index,
+        sg_unique_symbols_count,
     };
 
     progress_monitor.emit(|e| ProgressEvent::Done(e))?;

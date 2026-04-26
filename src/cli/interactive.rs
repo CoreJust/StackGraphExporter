@@ -148,6 +148,8 @@ fn parse_artifact(s: &str) -> Option<ArtifactType> {
         "dot-ucfs" => Some(ArtifactType::DotUcfs),
         "kt" => Some(ArtifactType::Kt),
         "json" => Some(ArtifactType::Json),
+        "g" => Some(ArtifactType::G),
+        "cnf" => Some(ArtifactType::Cnf),
         _ => None,
     }
 }

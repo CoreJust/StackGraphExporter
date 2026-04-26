@@ -111,6 +111,8 @@ SPPF enables output in the format of SPPF. KotGLL path is required to be provide
       --dot-ucfs
       --kt
       --stack-graph-json or --sg-json
+      --g
+      --cnf
 ```
 
 Enable generation of corresponding artifacts (those not marked with `stack-graph` or `sg` are for CFL).
@@ -126,6 +128,8 @@ Note that the artifacts are not generated automatically, you need to either run 
       --output-dot-ucfs <OUTPUT_DOT_UCFS>
       --output-kt <OUTPUT_KT>
       --output-stack-graph-json or --output-sg-json <OUTPUT_STACK_GRAPH_JSON>
+      --output-g <OUTPUT_G>
+      --output-cnf <OUTPUT_CNF>
 ```
 
 `-o, --output` sets directory for all the artifacts, others override paths for specific artifacts. By default, directory for all the artifacts is set to `./`.
@@ -185,6 +189,7 @@ Stores the output in ./queries.sgeq in the format of:
     {
       "symbol": {
         "name": "<symbol name>",
+        "own_index": <symbol index in stack graph symbol list (needed to make a query)>,
         "cfl_index": <node index in CFL graph (the one you need to make queries)>,
         "cfl_index_simplified": <node index in simplified CFL graph (the one you need to make queries)>,
         "file": "<the file the symbol is located at>",
@@ -204,7 +209,7 @@ Stores the output in ./queries.sgeq in the format of:
 }
 ```
 
-For grammar files a placeholder is added: `<placeholder nt=\"{start_symbol}\"/>`. To query some symbol `X` you need to remove .asStart() from that line if it's there and add a new line `val Q by Nt(Term(\"push_{X}\") * {start_symbol} * Term(\"pop_{X}\")).asStart()` right before or after the line with placeholder.
+For grammar files a placeholder is added: `<placeholder nt=\"{start_symbol}\"/>`. To query some symbol `X` you need to remove .asStart() from that line if it's there and add a new line `val Q by Nt(Term(\"psh{own_index}\") * {start_symbol} * Term(\"pp{own_index}\")).asStart()` right before or after the line with placeholder.
 
 For graph files, there is no need for a placeholder. Just add one or more lines `start -> {n};` after `{` to run queries from nodes with index `{n}` (or do not add those to run the query against the whole graph).
 
@@ -252,7 +257,7 @@ help, h
 quit, exit, halt
 ```
 
-*There is a known issue that UCFS artifacts might get corrupted upon sequential queries within same session. It can be solved with running a `clean`.*
+*There is a known issue that UCFS artifacts might get corrupted upon sequential queries within single session. It can be solved with running a `clean`.*
 
 <TODO>
 

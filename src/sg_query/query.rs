@@ -1,6 +1,6 @@
 use super::progress_event::ProgressEvent;
 use crate::cfl_builder::get_symbol_of;
-use crate::core::{SGFileIndex, SGNode, SGNodeId, SGNodeIndex};
+use crate::core::{SGFileIndex, SGNode, SGNodeId, SGNodeIndex, SGSymbolIndex};
 use crate::error::{Error, Result};
 use crate::io::ElapsedAndCount;
 use crate::sg_builder::StackGraphContext;
@@ -26,6 +26,7 @@ pub struct ResolvedDefinition {
 #[derive(Debug, Clone)]
 pub struct ResolutionResult {
     pub name: String,
+    pub symbol_index: SGSymbolIndex,
     pub file: String,
     pub line: usize,
     pub column: usize,
@@ -280,6 +281,7 @@ impl StackGraphContext {
         let symbol = &self.sggraph.symbols[ref_symbol_index];
         Ok(ResolutionResult {
             name: symbol.name.to_string(),
+            symbol_index: ref_symbol_index,
             file: self.sggraph.files[symbol.file.unwrap()].clone(),
             line: symbol.line.unwrap(),
             column: symbol.column.unwrap(),

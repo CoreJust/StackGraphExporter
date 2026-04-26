@@ -3,20 +3,9 @@ use std::collections::HashMap;
 use crate::core::SGNodeIndex;
 
 pub type CFLSymbolIndex = usize;
+pub type CFLRuleIndex = usize;
 pub type CFLNodeIndex = u32;
 pub type CFLFileIndex = usize;
-
-#[derive(Debug, Clone)]
-pub enum CFLSymbol {
-    Terminal(CFLSymbolIndex),
-    NonTerminal(CFLSymbolIndex),
-}
-
-#[derive(Debug, Clone)]
-pub struct CFLRule {
-    pub from_non_terminal: CFLSymbolIndex,
-    pub to: Vec<CFLSymbol>,
-}
 
 #[derive(Debug, Clone)]
 pub struct CFLEdge {
@@ -42,9 +31,20 @@ pub struct CFLPath {
 
 #[derive(Debug)]
 pub struct CFLGraph {
-    pub rules: Vec<CFLRule>,
     pub edges: Vec<CFLEdge>,
-    pub symbols: Vec<String>,
     pub metadata: HashMap<CFLNodeIndex, CFLNodeMetadata>,
     pub files: Vec<String>,
+    pub sg_to_cfl_rule_index: Vec<CFLRuleIndex>,
+    pub sg_unique_symbols_count: usize,
+}
+
+impl CFLGraph {
+    pub fn get_symbol_name(index: CFLSymbolIndex) -> String {
+        let rule_index = index / 2;
+        if index % 2 == 0 {
+            format!("psh{rule_index}")
+        } else {
+            format!("pp{rule_index}")
+        }
+    }
 }

@@ -12,7 +12,7 @@ pub trait ToCFGGrammar {
 
         let mut out_file = File::create(&out_path)?;
         for line in self.to_grammar_lines().into_iter() {
-            writeln!(out_file, "{}", line)?;
+            writeln!(out_file, "{line}")?;
         }
         Ok(())
     }
@@ -20,32 +20,15 @@ pub trait ToCFGGrammar {
 
 impl ToCFGGrammar for CFLGraph {
     fn to_grammar_lines(self: &Self) -> Vec<String> {
-        self.rules
-            .iter()
-            .map(|r| {
-                let mut right_part =
-                    r.to.iter()
-                        .map(|s| {
-                            match s {
-                                crate::core::CFLSymbol::Terminal(i) => {
-                                    format!("Terminal(\"{}\")", &self.symbols[*i])
-                                }
-                                crate::core::CFLSymbol::NonTerminal(i) => {
-                                    format!("Nonterminal(\"{}\")", &self.symbols[*i])
-                                }
-                            }
-                            .clone()
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                if right_part.is_empty() {
-                    right_part = "Terminal(\"eps\")".to_owned();
-                }
-                format!(
-                    "Nonterminal(\"{}\") -> {}",
-                    &self.symbols[r.from_non_terminal], right_part
-                )
-            })
-            .collect()
+        let mut result = Vec::with_capacity(self.sg_unique_symbols_count * 2 + 2);
+        (0..self.sg_unique_symbols_count).for_each(|r| {
+            result.push(format!(
+                "Nonterminal(\"S\") -> Terminal(\"psh{0}\") S Terminal(\"pp{0}\")",
+                r,
+            ));
+        });
+        result.push("Nonterminal(\"S\") -> Nonterminal(\"S\") Nonterminal(\"S\")".into());
+        result.push("Nonterminal(\"S\") -> Terminal(\"eps\")".into());
+        result
     }
 }

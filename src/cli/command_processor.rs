@@ -95,6 +95,8 @@ impl CommandProcessor {
                 self.engine.gen_dot_ucfs = true;
                 self.engine.gen_kt = true;
             }
+            "g" => self.engine.gen_g = true,
+            "cnf" => self.engine.gen_cnf = true,
             "verify" => self.engine.verify = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
             "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = true,
@@ -119,6 +121,8 @@ impl CommandProcessor {
                 self.engine.gen_dot_ucfs = false;
                 self.engine.gen_kt = false;
             }
+            "g" => self.engine.gen_g = false,
+            "cnf" => self.engine.gen_cnf = false,
             "verify" => self.engine.verify = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
             "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = false,
@@ -283,7 +287,8 @@ impl CommandProcessor {
             let mut rng = StdRng::seed_from_u64(count as u64);
             resolved_symbols
                 .choose_multiple_weighted(&mut rng, count as usize, |item| {
-                    item.resolved_in.as_millis() as f64
+                    let resolved_in = item.resolved_in.as_millis() as f64;
+                    resolved_in * resolved_in
                 })
                 .map_err(|e| Error::Internal(format!("Weighted sampling failed: {e}")))?
                 .into_iter()
@@ -336,6 +341,7 @@ impl CommandProcessor {
             self.engine.stats.queries.push(QueryStats {
                 symbol: SymbolStats {
                     name: rs.name,
+                    own_index: self.engine.rule_index_of_symbol(rs.symbol_index),
                     cfl_index: rs.node_index as CFLNodeIndex, // For non-simplified it is the same
                     cfl_index_simplified: cfl_index[0],
                     file: rs.file,

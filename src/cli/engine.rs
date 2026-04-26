@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::core::Stats;
+use crate::core::{SGSymbolIndex, Stats};
 use crate::io::ElapsedAndCount;
 use crate::sg_query::{ProgressEvent, ResolutionResult};
 use crate::unsupported_features_cleaner::clean_unsupported_features;
@@ -25,6 +25,8 @@ pub enum ArtifactType {
     DotUcfs,
     Kt,
     Json,
+    G,
+    Cnf,
 }
 
 pub struct Engine {
@@ -44,6 +46,8 @@ pub struct Engine {
     pub gen_dot_ucfs: bool,
     pub gen_kt: bool,
     pub gen_json: bool,
+    pub gen_g: bool,
+    pub gen_cnf: bool,
     pub output_dir: PathBuf,
     pub output_overrides: HashMap<ArtifactType, PathBuf>,
     pub kotgll_path: Option<PathBuf>,
@@ -83,6 +87,12 @@ impl Engine {
         if let Some(p) = args.output_stack_graph_json {
             overrides.insert(ArtifactType::Json, p);
         }
+        if let Some(p) = args.output_g {
+            overrides.insert(ArtifactType::G, p);
+        }
+        if let Some(p) = args.output_cnf {
+            overrides.insert(ArtifactType::Cnf, p);
+        }
 
         Self {
             stack_graph: None,
@@ -101,6 +111,8 @@ impl Engine {
             gen_dot_ucfs: args.dot_ucfs,
             gen_kt: args.kt,
             gen_json: args.stack_graph_json,
+            gen_g: args.g,
+            gen_cnf: args.cnf,
             output_dir,
             output_overrides: overrides,
             kotgll_path: args.kotgll_path,
@@ -182,7 +194,7 @@ impl Engine {
                 crate::info!(
                     "Generated CFL graph size: {vertices_count} vertices, {} edges; {} rules",
                     graph.edges.len(),
-                    graph.rules.len(),
+                    graph.sg_unique_symbols_count * 2 + 1,
                 );
                 let cfl_stats = if simplify {
                     &mut self.stats.cfl_graph_simplified
@@ -192,12 +204,16 @@ impl Engine {
                 cfl_stats.built_in = built_in.as_millis() as u64;
                 cfl_stats.vertices = vertices_count as usize;
                 cfl_stats.edges = graph.edges.len();
-                self.stats.cfl_grammar.rules = graph.rules.len();
+                self.stats.cfl_grammar.rules = graph.sg_unique_symbols_count * 2 + 1;
                 (Some(graph), Some(pop_map))
             };
             self.cfl_graph_simplified = simplify;
             Ok(self.cfl_graph.as_ref().unwrap())
         }
+    }
+
+    pub fn rule_index_of_symbol(&self, index: SGSymbolIndex) -> usize {
+        self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index]
     }
 
     pub fn query_all_symbols(&mut self, needed_at_most: u32) -> Result<Vec<ResolutionResult>> {
@@ -559,6 +575,14 @@ impl Engine {
                 let json = serde_json::to_string_pretty(&serializable)?;
                 std::fs::write(&path, json)?;
             }
+            ArtifactType::G => {
+                let cfl = self.ensure_cfl_graph()?;
+                cfl.write_to_g_file(&path)?;
+            }
+            ArtifactType::Cnf => {
+                let cfl = self.ensure_cfl_graph()?;
+                cfl.write_to_cnf_file(&path)?;
+            }
         }
         Ok(path)
     }
@@ -571,6 +595,8 @@ impl Engine {
             (self.gen_dot_ucfs, ArtifactType::DotUcfs),
             (self.gen_kt, ArtifactType::Kt),
             (self.gen_json, ArtifactType::Json),
+            (self.gen_g, ArtifactType::G),
+            (self.gen_cnf, ArtifactType::Cnf),
         ];
         for (enabled, artifact) in artifacts {
             if enabled {
@@ -592,6 +618,8 @@ impl Engine {
                 ArtifactType::DotUcfs => "cfl_ucfs.dot",
                 ArtifactType::Kt => "UCFSGrammar.kt",
                 ArtifactType::Json => "stackgraph.json",
+                ArtifactType::G => "cfl.g",
+                ArtifactType::Cnf => "cfl_grammar.cnf",
             };
             self.output_dir.join(filename)
         }

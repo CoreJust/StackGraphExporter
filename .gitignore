@@ -5,3 +5,5 @@
 *.cfg
 *.json
 *.sgeq
+*.cnf
+*.g

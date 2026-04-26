@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::artifacts::progress_event::ProgressEvent;
-use crate::core::{CFLGraph, CFLSymbol, SGGraph, SGNode, SGNodeId, SGSymbol};
+use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
 use crate::io::ElapsedAndCount;
 
@@ -184,14 +184,9 @@ impl ToDOT for CFLGraph {
         for (i, edge) in self.edges.iter().enumerate() {
             let label = edge
                 .symbol
-                .and_then(|s| {
-                    Some(format!(
-                        " [label = \"{}\"]",
-                        esc_dot_label(&self.symbols[s])
-                    ))
-                })
-                .unwrap_or(" [label = \"\"]".to_string());
-            dot_lines.push(format!("  {} -> {}{};", edge.from, edge.to, label));
+                .and_then(|s| Some(format!("[label = \"{}\"]", Self::get_symbol_name(s))))
+                .unwrap_or("[label = \"\"]".to_string());
+            dot_lines.push(format!("  {} -> {} {};", edge.from, edge.to, label));
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
                     elapsed: start.elapsed(),
@@ -202,30 +197,6 @@ impl ToDOT for CFLGraph {
         }
 
         dot_lines.push("}".to_string());
-        if !clean_dot {
-            for (i, rule) in self.rules.iter().enumerate() {
-                dot_lines.push(format!(
-                    "// {} := {}",
-                    &self.symbols[rule.from_non_terminal],
-                    rule.to
-                        .iter()
-                        .map(|s| self.symbols[match s {
-                            CFLSymbol::Terminal(i) => *i,
-                            CFLSymbol::NonTerminal(i) => *i,
-                        }]
-                        .clone())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                ));
-                if i % WRITE_ONCE_IN_N == 0 {
-                    progress(ProgressEvent::GeneratingArtifact {
-                        elapsed: start.elapsed(),
-                        progress: Some((i, self.rules.len())),
-                        message: "Generating CFL DOT rules comment".into(),
-                    })?;
-                }
-            }
-        }
         Ok(dot_lines)
     }
 }

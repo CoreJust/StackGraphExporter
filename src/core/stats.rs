@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::core::CFLNodeIndex;
+use crate::core::{CFLNodeIndex, CFLSymbolIndex};
 
 #[derive(Serialize, Default)]
 pub struct StackGraphStats {
@@ -29,6 +29,7 @@ pub struct CFLGrammarStats {
 #[derive(Serialize)]
 pub struct SymbolStats {
     pub name: String,
+    pub own_index: CFLSymbolIndex,
     pub cfl_index: CFLNodeIndex,
     pub cfl_index_simplified: CFLNodeIndex,
     pub file: String,

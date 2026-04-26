@@ -65,6 +65,10 @@ pub struct OpenArgs {
     pub kt: bool,
     #[arg(long, alias = "sg-json")]
     pub stack_graph_json: bool,
+    #[arg(long)]
+    pub g: bool,
+    #[arg(long)]
+    pub cnf: bool,
 
     // Output paths
     #[arg(short, long)]
@@ -81,6 +85,10 @@ pub struct OpenArgs {
     pub output_kt: Option<PathBuf>,
     #[arg(long, alias = "output-sg-json")]
     pub output_stack_graph_json: Option<PathBuf>,
+    #[arg(long)]
+    pub output_g: Option<PathBuf>,
+    #[arg(long)]
+    pub output_cnf: Option<PathBuf>,
 
     // Immediate queries
     #[arg(short = 's', long)]

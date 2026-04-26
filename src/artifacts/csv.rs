@@ -51,8 +51,8 @@ impl ToCSV for CFLGraph {
             column_label.push(format!(
                 "{}",
                 edge.symbol
-                    .and_then(|s| Some(self.symbols[s].as_str()))
-                    .unwrap_or("eps")
+                    .and_then(|s| Some(CFLGraph::get_symbol_name(s)))
+                    .unwrap_or("eps".into())
             ));
         }
         vec![

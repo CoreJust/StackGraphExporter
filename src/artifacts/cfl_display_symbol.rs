@@ -1,9 +1,10 @@
 use std::fmt::{Display, Formatter};
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum CFLDisplaySymbol {
     Epsilon,
-    Push(usize),
     Pop(usize),
+    Push(usize),
 }
 
 impl Display for CFLDisplaySymbol {
@@ -12,11 +13,11 @@ impl Display for CFLDisplaySymbol {
             Self::Epsilon => {
                 write!(f, "eps")?;
             }
-            Self::Push(index) => {
-                write!(f, "psh{index}")?;
-            }
             Self::Pop(index) => {
                 write!(f, "pp{index}")?;
+            }
+            Self::Push(index) => {
+                write!(f, "psh{index}")?;
             }
         }
         Ok(())

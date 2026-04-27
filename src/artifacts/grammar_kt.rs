@@ -12,7 +12,12 @@ use std::time::Instant;
 const WRITE_ONCE_IN_N: usize = 64;
 
 pub trait ToKTGrammar {
-    fn to_kotlin_lines<F>(&self, class_name: &str, progress: &mut F) -> Result<Vec<String>>
+    fn to_kotlin_lines<F>(
+        &self,
+        class_name: &str,
+        for_query_generation: bool,
+        progress: &mut F,
+    ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>;
 
@@ -20,6 +25,7 @@ pub trait ToKTGrammar {
         &self,
         out_path: &PathBuf,
         class_name: &str,
+        for_query_generation: bool,
         mut progress: F,
     ) -> Result<()>
     where
@@ -27,7 +33,7 @@ pub trait ToKTGrammar {
     {
         let mut file = File::create(out_path)?;
         let start = Instant::now();
-        let kt = self.to_kotlin_lines(class_name, &mut progress)?;
+        let kt = self.to_kotlin_lines(class_name, for_query_generation, &mut progress)?;
         let total_lines = kt.len();
         for (i, line) in kt.into_iter().enumerate() {
             writeln!(file, "{line}")?;
@@ -54,11 +60,16 @@ pub trait ToKTGrammar {
 }
 
 impl ToKTGrammar for CFLGraph {
-    fn to_kotlin_lines<F>(&self, class_name: &str, progress: &mut F) -> Result<Vec<String>>
+    fn to_kotlin_lines<F>(
+        &self,
+        class_name: &str,
+        for_query_generation: bool,
+        progress: &mut F,
+    ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        KotlinGrammarGenerator::new(self, class_name, progress).generate()
+        KotlinGrammarGenerator::new(self, class_name, for_query_generation, progress).generate()
     }
 }
 
@@ -68,6 +79,7 @@ where
 {
     graph: &'a CFLGraph,
     class_name: &'a str,
+    for_query_generation: bool,
     progress: &'a mut F,
     start: Instant,
 }
@@ -76,10 +88,16 @@ impl<'a, F> KotlinGrammarGenerator<'a, F>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    fn new(graph: &'a CFLGraph, class_name: &'a str, progress: &'a mut F) -> Self {
+    fn new(
+        graph: &'a CFLGraph,
+        class_name: &'a str,
+        for_query_generation: bool,
+        progress: &'a mut F,
+    ) -> Self {
         Self {
             graph,
             class_name,
+            for_query_generation,
             progress,
             start: Instant::now(),
         }
@@ -100,9 +118,14 @@ where
     }
 
     fn append_non_terminal_declarations(&mut self, kt_lines: &mut Vec<String>) -> Result<()> {
-        kt_lines.push(format!(
-            "\tval S by Nt().asStart() // <placeholder nt=\"S\"/>"
-        ));
+        if self.for_query_generation {
+            kt_lines.push(format!(
+                "\tval S by Nt().asStart() // <placeholder nt=\"S\"/>"
+            ));
+        } else {
+            kt_lines.push(format!("\tval Q by Nt().asStart()"));
+            kt_lines.push(format!("\tval S by Nt((Q or Term(\"\")).many)"));
+        }
         Ok(())
     }
 
@@ -118,7 +141,10 @@ where
             message: "Appending init block".into(),
         })?;
 
-        kt_lines.push(kt_grammar_productions_map_build(sg_symbols_count));
+        kt_lines.push(kt_grammar_productions_map_build(
+            sg_symbols_count,
+            self.for_query_generation,
+        ));
         kt_lines.push("\t}".to_string());
         Ok(())
     }

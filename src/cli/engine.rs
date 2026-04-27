@@ -400,10 +400,10 @@ impl Engine {
             return Err(Error::Internal("KotGLL backend not enabled".into()));
         }
         if !self.generated_artifacts.contains_key(&ArtifactType::Cfg) {
-            self.generate_artifact(ArtifactType::Cfg)?;
+            self.generate_artifact(ArtifactType::Cfg, true)?;
         }
         if !self.generated_artifacts.contains_key(&ArtifactType::Csv) {
-            self.generate_artifact(ArtifactType::Csv)?;
+            self.generate_artifact(ArtifactType::Csv, true)?;
         }
         let mut renderer = ProgressRenderer::new();
         let kotgll_defs = kotgll_query(
@@ -510,13 +510,13 @@ impl Engine {
             return Err(Error::Internal("UCFS backend not enabled".into()));
         }
         if !self.generated_artifacts.contains_key(&ArtifactType::Kt) {
-            self.generate_artifact(ArtifactType::Kt)?;
+            self.generate_artifact(ArtifactType::Kt, true)?;
         }
         if !self
             .generated_artifacts
             .contains_key(&ArtifactType::DotUcfs)
         {
-            self.generate_artifact(ArtifactType::DotUcfs)?;
+            self.generate_artifact(ArtifactType::DotUcfs, true)?;
         }
         let grammar_path = self.generated_artifacts[&ArtifactType::Kt].clone();
         let dot_path = self.generated_artifacts[&ArtifactType::DotUcfs].clone();
@@ -532,7 +532,11 @@ impl Engine {
         )
     }
 
-    pub fn generate_artifact(&mut self, artifact: ArtifactType) -> Result<PathBuf> {
+    pub fn generate_artifact(
+        &mut self,
+        artifact: ArtifactType,
+        for_query_generation: bool,
+    ) -> Result<PathBuf> {
         let path = self.output_path(artifact);
         self.generated_artifacts.insert(artifact, path.clone());
         match artifact {
@@ -548,12 +552,12 @@ impl Engine {
                 let ctx = self.ensure_context()?;
                 let mut renderer = ProgressRenderer::new();
                 ctx.sggraph
-                    .write_to_dot_file(&path, false, |e| renderer.render(&e))?;
+                    .write_to_dot_file(&path, false, false, |e| renderer.render(&e))?;
             }
             ArtifactType::DotUcfs => {
                 let cfl = self.ensure_cfl_graph()?;
                 let mut renderer = ProgressRenderer::new();
-                cfl.write_to_dot_file(&path, true, |e| renderer.render(&e))?;
+                cfl.write_to_dot_file(&path, true, for_query_generation, |e| renderer.render(&e))?;
                 let cfl_stats = if self.cfl_graph_simplified {
                     &mut self.stats.cfl_graph_simplified
                 } else {
@@ -565,7 +569,9 @@ impl Engine {
             ArtifactType::Kt => {
                 let cfl = self.ensure_cfl_graph()?;
                 let mut renderer = ProgressRenderer::new();
-                cfl.write_to_kotlin_file(&path, "UCFSGrammar", |e| renderer.render(&e))?;
+                cfl.write_to_kotlin_file(&path, "UCFSGrammar", for_query_generation, |e| {
+                    renderer.render(&e)
+                })?;
                 self.stats.cfl_grammar.path = path.display().to_string();
                 self.stats.cfl_grammar.file_size =
                     std::fs::metadata(&self.stats.cfl_grammar.path)?.len();
@@ -600,7 +606,7 @@ impl Engine {
         ];
         for (enabled, artifact) in artifacts {
             if enabled {
-                let path = self.generate_artifact(artifact)?;
+                let path = self.generate_artifact(artifact, false)?;
                 crate::success!("Generated {artifact:?} at {}", path.display());
             }
         }

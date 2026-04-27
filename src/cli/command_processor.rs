@@ -148,7 +148,7 @@ impl CommandProcessor {
 
     fn cmd_create(&mut self, artifact: Option<ArtifactType>) -> Result<()> {
         if let Some(art) = artifact {
-            let path = self.engine.generate_artifact(art)?;
+            let path = self.engine.generate_artifact(art, false)?;
             crate::success!("Generated {art:?} at {}", path.display());
         } else {
             self.engine.generate_artifacts()?;
@@ -317,16 +317,16 @@ impl CommandProcessor {
         use std::fs::File;
         use std::io::Write;
 
-        self.engine.generate_artifact(ArtifactType::Kt)?;
+        self.engine.generate_artifact(ArtifactType::Kt, true)?;
         self.engine.simplify_cfl = false;
-        self.engine.generate_artifact(ArtifactType::DotUcfs)?;
+        self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
         self.engine.simplify_cfl = true;
         let nonsimplified_cfl_path = self.engine.output_path(ArtifactType::DotUcfs);
         self.engine.output_overrides.insert(
             ArtifactType::DotUcfs,
             Self::with_file_name_appended(&nonsimplified_cfl_path, "_simplified"),
         );
-        self.engine.generate_artifact(ArtifactType::DotUcfs)?;
+        self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
 
         let resolved_symbols = self.pick_symbols(count)?;
         self.engine.stats.queries = Vec::with_capacity(resolved_symbols.len());

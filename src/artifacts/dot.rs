@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -13,7 +14,12 @@ const WRITE_ONCE_IN_N: usize = 64;
 pub trait ToDOT {
     const ARTIFACT_NAME: &'static str;
 
-    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    fn to_dot_lines<F>(
+        self: &Self,
+        clean_dot: bool,
+        for_query_generation: bool,
+        progress: &mut F,
+    ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>;
 
@@ -21,6 +27,7 @@ pub trait ToDOT {
         self: &Self,
         out_path: &PathBuf,
         clean_dot: bool,
+        for_query_generation: bool,
         mut progress: F,
     ) -> Result<()>
     where
@@ -28,7 +35,7 @@ pub trait ToDOT {
     {
         let start = Instant::now();
         let mut out_file = File::create(&out_path)?;
-        let dot = self.to_dot_lines(clean_dot, &mut progress)?;
+        let dot = self.to_dot_lines(clean_dot, for_query_generation, &mut progress)?;
         let total_lines = dot.len();
 
         for (i, line) in dot.into_iter().enumerate() {
@@ -125,10 +132,20 @@ fn make_node_name(
 impl ToDOT for SGGraph {
     const ARTIFACT_NAME: &'static str = "Stack Graph DOT";
 
-    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    fn to_dot_lines<F>(
+        self: &Self,
+        clean_dot: bool,
+        for_query_generation: bool,
+        progress: &mut F,
+    ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
+        assert!(
+            !for_query_generation,
+            "SGGraph cannot be used for query generation",
+        );
+
         let start = Instant::now();
         let mut dot_lines: Vec<String> = Vec::new();
         dot_lines.push("digraph stackgraph {".to_string());
@@ -169,7 +186,12 @@ impl ToDOT for SGGraph {
 impl ToDOT for CFLGraph {
     const ARTIFACT_NAME: &'static str = "CFL Graph DOT";
 
-    fn to_dot_lines<F>(self: &Self, clean_dot: bool, progress: &mut F) -> Result<Vec<String>>
+    fn to_dot_lines<F>(
+        self: &Self,
+        clean_dot: bool,
+        for_query_generation: bool,
+        progress: &mut F,
+    ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
@@ -181,12 +203,16 @@ impl ToDOT for CFLGraph {
             dot_lines.push("  node [shape=box, fontsize=10];".to_string());
         }
 
+        let mut start_nodes = HashSet::new();
         for (i, edge) in self.edges.iter().enumerate() {
             let label = edge
                 .symbol
                 .and_then(|s| Some(format!("[label = \"{}\"]", Self::get_symbol_name(s))))
                 .unwrap_or("[label = \"\"]".to_string());
             dot_lines.push(format!("  {} -> {} {};", edge.from, edge.to, label));
+            if !for_query_generation && edge.symbol.is_some() && edge.symbol.unwrap() % 2 == 0 {
+                start_nodes.insert(edge.from);
+            }
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
                     elapsed: start.elapsed(),
@@ -194,6 +220,9 @@ impl ToDOT for CFLGraph {
                     message: "Generating CFL DOT edges".into(),
                 })?;
             }
+        }
+        for node in start_nodes {
+            dot_lines.push(format!("  start -> {node} ;"));
         }
 
         dot_lines.push("}".to_string());

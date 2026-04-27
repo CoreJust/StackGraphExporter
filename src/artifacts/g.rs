@@ -6,8 +6,8 @@ use crate::core::{CFLGraph, CFLNodeIndex};
 use crate::error::Result;
 
 pub trait ToG {
-    type Node: Display;
-    type Edge: Display;
+    type Node: Display + Ord;
+    type Edge: Display + Ord;
 
     fn to_g_lines(self: &Self) -> Vec<(Self::Node, Self::Edge, Self::Node)>;
 
@@ -16,7 +16,8 @@ pub trait ToG {
         use std::io::Write;
 
         let mut out_file = File::create(&out_path)?;
-        let g_lines = self.to_g_lines();
+        let mut g_lines = self.to_g_lines();
+        g_lines.sort();
 
         for (from, label, to) in g_lines {
             writeln!(out_file, "{from} {label} {to}")?;

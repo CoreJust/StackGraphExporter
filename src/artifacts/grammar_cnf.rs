@@ -8,6 +8,7 @@ use crate::error::Result;
 pub struct NonTerminal(String);
 
 pub enum CNFRuleRightPart {
+    Empty,
     Terminal(CFLDisplaySymbol),
     NonTerminals(NonTerminal, NonTerminal),
 }
@@ -31,7 +32,20 @@ pub trait ToCNFGrammar {
 
 impl ToCNFGrammar for CFLGraph {
     fn to_cnf_lines(self: &Self) -> (NonTerminal, Vec<(NonTerminal, CNFRuleRightPart)>) {
-        let mut rules = Vec::with_capacity(self.sg_unique_symbols_count * 6 + 4);
+        let mut rules = Vec::with_capacity(self.sg_unique_symbols_count * 4 + 4);
+        rules.push((
+            NonTerminal("Eps".into()),
+            CNFRuleRightPart::Terminal(CFLDisplaySymbol::Epsilon),
+        ));
+        rules.push((NonTerminal("S".into()), CNFRuleRightPart::Empty));
+        rules.push((
+            NonTerminal("S".into()),
+            CNFRuleRightPart::NonTerminals(NonTerminal("S".into()), NonTerminal("Eps".into())),
+        ));
+        rules.push((
+            NonTerminal("S".into()),
+            CNFRuleRightPart::NonTerminals(NonTerminal("S".into()), NonTerminal("Q".into())),
+        ));
         (0..self.sg_unique_symbols_count).for_each(|r| {
             rules.push((
                 NonTerminal(format!("NT#psh{r}")),
@@ -45,54 +59,25 @@ impl ToCNFGrammar for CFLGraph {
                 NonTerminal(format!("S#psh{r}")),
                 CNFRuleRightPart::NonTerminals(
                     NonTerminal(format!("NT#psh{r}")),
-                    NonTerminal("SEps".into()),
-                ),
-            ));
-            rules.push((
-                NonTerminal(format!("S#psh{r}")),
-                CNFRuleRightPart::NonTerminals(
-                    NonTerminal(format!("NT#psh{r}")),
                     NonTerminal("S".into()),
                 ),
             ));
             rules.push((
-                NonTerminal("S".into()),
+                NonTerminal("Q".into()),
                 CNFRuleRightPart::NonTerminals(
                     NonTerminal(format!("S#psh{r}")),
                     NonTerminal(format!("NT#pp{r}")),
                 ),
             ));
-            rules.push((
-                NonTerminal("S".into()),
-                CNFRuleRightPart::NonTerminals(
-                    NonTerminal(format!("NT#psh{r}")),
-                    NonTerminal(format!("NT#pp{r}")),
-                ),
-            ));
         });
-        rules.push((
-            NonTerminal("Eps".into()),
-            CNFRuleRightPart::Terminal(CFLDisplaySymbol::Epsilon),
-        ));
-        rules.push((
-            NonTerminal("SEps".into()),
-            CNFRuleRightPart::NonTerminals(NonTerminal("SEps".into()), NonTerminal("SEps".into())),
-        ));
-        rules.push((
-            NonTerminal("SEps".into()),
-            CNFRuleRightPart::NonTerminals(NonTerminal("S".into()), NonTerminal("Eps".into())),
-        ));
-        rules.push((
-            NonTerminal("SEps".into()),
-            CNFRuleRightPart::NonTerminals(NonTerminal("Eps".into()), NonTerminal("S".into())),
-        ));
-        (NonTerminal("S".into()), rules)
+        (NonTerminal("Q".into()), rules)
     }
 }
 
 impl Display for CNFRuleRightPart {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Empty => write!(f, ""),
             Self::Terminal(sym) => write!(f, "{sym}"),
             Self::NonTerminals(a, b) => write!(f, "{} {}", a.0, b.0),
         }

@@ -274,3 +274,21 @@ Then the query is run depending on enabled backends and features.
 ## Examples
 
 <TODO>
+
+### Additional: All paths - CNF
+
+```
+Q
+
+Eps -> eps
+S -> 
+S -> S Q
+S -> S Eps
+
+FOR EACH i {
+  NT#psh$i -> psh$i
+  NT#pp$i -> pp$i
+  Q#psh$i -> NT#psh$i S
+  Q -> S#psh$i NT#pp$i
+}
+```

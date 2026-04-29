@@ -147,6 +147,14 @@ For `--source` you have to specify full path to the symbol (`<path-to-file>:<lin
 For `--symbol` you have to specify symbol name and then you enter the query mode (see Query mode below), after which the app exits.
 
 ```
+      --query-all-paths or --all-paths or --query-all
+```
+
+Immediately generates all the requested artifacts.
+
+Runs query for all the references at once within stack graph (to generate all-paths query for CFL or G/CNF, use `create` in interactive mode).
+
+```
       --pick-queries <COUNT>
 ```
 
@@ -202,7 +210,7 @@ Stores the output in ./queries.sgeq in the format of:
         },
         ...
       ],
-      "resolution_time": [ <list of resolution duration in milliseconds, 7 items> ]
+      "resolution_time": [ <list of resolution duration in microseconds, 7 items> ]
     },
     ...
   ]

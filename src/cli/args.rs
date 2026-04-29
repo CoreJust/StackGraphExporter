@@ -97,6 +97,8 @@ pub struct OpenArgs {
     pub source: Option<String>,
     #[arg(long)]
     pub pick_queries: Option<u32>,
+    #[arg(long, alias = "all-paths", alias = "query-all")]
+    pub query_all_paths: bool,
 
     // Path to the project root
     pub path: PathBuf,

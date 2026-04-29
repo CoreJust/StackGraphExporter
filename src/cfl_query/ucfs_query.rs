@@ -1,4 +1,5 @@
 use crate::cfl_query::progress_event::ProgressEvent;
+use crate::core::CFLRuleIndex;
 use crate::error::{Error, Result};
 use std::fs::{read_to_string, write};
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ fn parse_start_symbol_from_placeholder(line: &String) -> Option<&str> {
 
 fn prepare_symbol_query_grammar(
     grammar_path: &Path,
-    symbol: &str,
+    rule: CFLRuleIndex,
     query_grammar_path: &PathBuf,
 ) -> Result<()> {
     let content = read_to_string(grammar_path)?;
@@ -47,9 +48,8 @@ fn prepare_symbol_query_grammar(
     let without_suffix = line.replace(".asStart()", "");
     lines[start_line_index] = without_suffix;
 
-    let escaped_symbol = symbol.replace('\\', "\\\\").replace('"', "\\\"");
     let q_line = format!(
-        "    val Q by Nt(Term(\"push_{escaped_symbol}\") * {start_name} * Term(\"pop_{escaped_symbol}\")).asStart()",
+        "    val Q by Nt(Term(\"psh{rule}\") * {start_name} * Term(\"pp{rule}\")).asStart()",
     );
 
     // Insert the Q declaration
@@ -89,7 +89,7 @@ pub fn ucfs_query<F>(
     grammar_path: &Path,
     dot_path: &Path,
     output_dir: &Path,
-    symbol: &str,
+    rule: CFLRuleIndex,
     indices: &[u32],
     mut progress: F,
 ) -> Result<(PathBuf, PathBuf)>
@@ -104,7 +104,7 @@ where
     let query_grammar_path = grammar_path
         .with_file_name("UCFSGrammar")
         .with_extension("kt");
-    prepare_symbol_query_grammar(grammar_path, symbol, &query_grammar_path)?;
+    prepare_symbol_query_grammar(grammar_path, rule, &query_grammar_path)?;
 
     progress(ProgressEvent::ModifyingDot {
         elapsed: start.elapsed(),

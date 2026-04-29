@@ -5,7 +5,7 @@ use crate::core::{
     SGNodeIndex, SGSymbol, SGSymbolIndex,
 };
 use crate::error::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 pub fn get_symbol_of(node: &SGNode) -> Option<SGSymbolIndex> {
@@ -235,10 +235,19 @@ where
         )?;
     }
 
+    let potentially_virtual_rules = sggraph
+        .symbols
+        .iter()
+        .enumerate()
+        .filter(|s| !s.1.real)
+        .map(|s| sg_to_cfl_rule_index[s.0])
+        .collect::<HashSet<_>>();
+
     let cfl_graph = CFLGraph {
         edges,
         metadata,
         files: sggraph.files.clone(),
+        potentially_virtual_rules,
         sg_to_cfl_rule_index,
         sg_unique_symbols_count,
     };

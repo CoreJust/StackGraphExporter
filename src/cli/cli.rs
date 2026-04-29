@@ -19,10 +19,16 @@ fn run_open(args: OpenArgs) -> Result<()> {
     let symbol = args.symbol.clone();
     let source = args.source.clone();
     let pick_queries = args.pick_queries.clone();
-    let immediates_count: u32 = [symbol.is_some(), source.is_some(), pick_queries.is_some()]
-        .iter()
-        .map(|&some| if some { 1 } else { 0 })
-        .sum();
+    let query_all_paths = args.query_all_paths;
+    let immediates_count: u32 = [
+        symbol.is_some(),
+        source.is_some(),
+        pick_queries.is_some(),
+        query_all_paths,
+    ]
+    .iter()
+    .map(|&some| if some { 1 } else { 0 })
+    .sum();
     if immediates_count > 1 {
         return Err(Error::InvalidArgument("Can only have one immediate query argument at a time, but {immediates_count} were given".into()));
     }
@@ -56,6 +62,9 @@ fn run_open(args: OpenArgs) -> Result<()> {
     } else if let Some(count) = pick_queries {
         commands.push(Command::Create { artifact: None });
         commands.push(Command::PickQueries { count });
+    } else if query_all_paths {
+        commands.push(Command::Create { artifact: None });
+        commands.push(Command::QueryAll);
     }
 
     for cmd in commands {

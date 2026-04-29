@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::core::SGNodeIndex;
 
@@ -34,6 +34,7 @@ pub struct CFLGraph {
     pub edges: Vec<CFLEdge>,
     pub metadata: HashMap<CFLNodeIndex, CFLNodeMetadata>,
     pub files: Vec<String>,
+    pub potentially_virtual_rules: HashSet<CFLRuleIndex>, // Those might contain virtual symbols and must not be queried
     pub sg_to_cfl_rule_index: Vec<CFLRuleIndex>,
     pub sg_unique_symbols_count: usize,
 }

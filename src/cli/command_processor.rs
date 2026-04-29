@@ -13,7 +13,7 @@ use crate::{
     core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
     error::{Error, Result},
     io::{ElapsedAndCount, ProgressRenderer},
-    sg_query::{ProgressEvent, ResolutionResult},
+    sg_query::{ProgressEvent, QueryOneResult},
 };
 
 #[derive(Debug, Clone)]
@@ -43,12 +43,14 @@ pub enum Command {
     QueryNode {
         node: SGNodeIndex,
     },
+    QueryAll,
     PickQueries {
         count: u32,
     },
     State,
     Help,
     Exit,
+    Test, // Undocumented, used for internal testing
 }
 
 pub struct CommandProcessor {
@@ -70,10 +72,12 @@ impl CommandProcessor {
             Command::Clean { artifact } => self.cmd_clean(artifact),
             Command::QuerySymbol { symbol } => self.cmd_query_symbol(&symbol),
             Command::QueryNode { node } => self.cmd_query_node(node),
+            Command::QueryAll => self.cmd_query_all(),
             Command::PickQueries { count } => self.cmd_pick_queries(count),
             Command::State => self.cmd_state(),
             Command::Help => self.cmd_help(),
             Command::Exit => self.cmd_exit(),
+            Command::Test => self.cmd_test(),
         }
     }
 
@@ -279,9 +283,21 @@ impl CommandProcessor {
         Ok(())
     }
 
-    fn pick_symbols(&mut self, count: u32) -> Result<Vec<ResolutionResult>> {
+    fn cmd_query_all(&mut self) -> Result<()> {
+        let result = self.engine.query_all_symbols()?;
+        crate::success!(
+            "Found {} definitions ({} unique ones) for {} references in {}ms",
+            result.total_defs,
+            result.defs.len(),
+            result.total_refs,
+            result.resolved_in.as_millis(),
+        );
+        Ok(())
+    }
+
+    fn pick_symbols(&mut self, count: u32) -> Result<Vec<QueryOneResult>> {
         let needed_at_most = count * 128; // Heuristic to get a sufficient number of queries to choose from yet not to take too much time
-        let resolved_symbols = self.engine.query_all_symbols(needed_at_most)?;
+        let resolved_symbols = self.engine.query_all_symbols_by_one(needed_at_most)?;
         let total_symbol = resolved_symbols.len();
         Ok(if (count as usize) < total_symbol {
             let mut rng = StdRng::seed_from_u64(count as u64);
@@ -357,7 +373,7 @@ impl CommandProcessor {
                         column: d.col,
                     })
                     .collect(),
-                resolution_time: durations.map(|d| d.as_millis() as u64),
+                resolution_time: durations.map(|d| d.as_micros() as u64),
             });
             renderer.render(&ProgressEvent::RetryingQueries(ElapsedAndCount {
                 current: i,
@@ -405,6 +421,7 @@ impl CommandProcessor {
         crate::info!("  create <artifact> (alternative: c)");
         crate::info!("  clean <artifact>");
         crate::info!("  query <symbol> (alternative: q, r, run)");
+        crate::info!("  query_all (alternative: qall, rall, run_all)");
         crate::info!("  state (alternative: s)");
         crate::info!("  help (alternative: h)");
         crate::info!("  exit (alternative: quit, halt)");
@@ -413,5 +430,9 @@ impl CommandProcessor {
 
     fn cmd_exit(&self) -> Result<()> {
         std::process::exit(0);
+    }
+
+    fn cmd_test(&mut self) -> Result<()> {
+        self.engine.test()
     }
 }

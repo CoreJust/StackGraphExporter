@@ -76,6 +76,9 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                     crate::error!("{}", e);
                 }
             }
+            "qall" | "rall" | "query_all" | "run_all" => {
+                processor.process(Command::QueryAll)?;
+            }
             "enable" | "e" => {
                 if parts.len() < 2 {
                     crate::error!("Usage: enable <feature>");
@@ -129,6 +132,11 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
             }
             "state" | "s" => {
                 if let Err(e) = processor.process(Command::State) {
+                    crate::error!("{}", e);
+                }
+            }
+            "test" => {
+                if let Err(e) = processor.process(Command::Test) {
                     crate::error!("{}", e);
                 }
             }

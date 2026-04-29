@@ -24,7 +24,7 @@ pub struct ResolvedDefinition {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolutionResult {
+pub struct QueryOneResult {
     pub name: String,
     pub symbol_index: SGSymbolIndex,
     pub file: String,
@@ -33,6 +33,20 @@ pub struct ResolutionResult {
     pub node_index: SGNodeIndex,
     pub resolved_in: Duration,
     pub defs: Vec<ResolvedDefinition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryAllResult {
+    pub resolved_in: Duration,
+    #[allow(dead_code)]
+    pub defs: Vec<ResolvedDefinition>,
+    pub total_refs: usize,
+    pub total_defs: usize,
+}
+
+pub enum ResolutionResult {
+    ForOne(QueryOneResult),
+    ForAll(QueryAllResult),
 }
 
 impl StackGraphContext {
@@ -194,6 +208,30 @@ impl StackGraphContext {
     pub fn resolve_reference<F>(
         &mut self,
         node_index: SGNodeIndex,
+        progress: F,
+    ) -> Result<QueryOneResult>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        match self.resolve_reference_or_all(Some(node_index), progress)? {
+            ResolutionResult::ForOne(result) => Ok(result),
+            ResolutionResult::ForAll(_) => panic!(),
+        }
+    }
+
+    pub fn resolve_all_references<F>(&mut self, progress: F) -> Result<QueryAllResult>
+    where
+        F: FnMut(ProgressEvent) -> Result<()>,
+    {
+        match self.resolve_reference_or_all(None, progress)? {
+            ResolutionResult::ForOne(_) => panic!(),
+            ResolutionResult::ForAll(result) => Ok(result),
+        }
+    }
+
+    pub fn resolve_reference_or_all<F>(
+        &mut self,
+        node_index: Option<SGNodeIndex>,
         mut progress: F,
     ) -> Result<ResolutionResult>
     where
@@ -201,15 +239,28 @@ impl StackGraphContext {
     {
         let _ = self.database(&mut progress)?;
         let start = Instant::now();
-        let node_id = &self.sggraph.ids[node_index as usize];
-        let start_node_handle = self.node_handle_map.get(node_id).copied().ok_or_else(|| {
-            Error::PathExtraction(format!(
-                "No stack graph node handle for node index {}",
-                node_index
-            ))
-        })?;
+        let node_ids = node_index
+            .and_then(|i| Some(Ok(vec![i])))
+            .unwrap_or_else(|| self.find_reference_nodes(None, &mut progress))?
+            .into_iter()
+            .map(|index| &self.sggraph.ids[index as usize])
+            .collect::<Vec<_>>();
+        let total_refs = node_ids.len();
+        let start_node_handles = node_ids
+            .into_iter()
+            .map(|node_id| {
+                self.node_handle_map.get(node_id).copied().ok_or_else(|| {
+                    Error::PathExtraction(format!(
+                        "No stack graph node handle for node index {node_index:?}",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        if !self.stack_graph[start_node_handle].is_reference() {
+        if start_node_handles
+            .iter()
+            .any(|handle| !self.stack_graph[*handle].is_reference())
+        {
             panic!("Passed a non-reference node handle to resolve_reference");
         }
 
@@ -222,10 +273,11 @@ impl StackGraphContext {
         let mut db_candidates = DatabaseCandidates::new(&self.stack_graph, partials, db);
         let stitcher_config = StitcherConfig::default().with_detect_similar_paths(true);
 
-        let mut end_nodes = std::collections::HashSet::new();
+        let mut end_nodes = HashSet::new();
+        let mut total_defs = 0;
         ForwardPartialPathStitcher::find_all_complete_partial_paths(
             &mut db_candidates,
-            vec![start_node_handle],
+            start_node_handles,
             stitcher_config,
             &NoCancellation,
             |g, _ps, p| {
@@ -234,6 +286,7 @@ impl StackGraphContext {
                     panic!("end_node was not a definition!");
                 }
                 end_nodes.insert(p.end_node());
+                total_defs += 1;
             },
         )
         .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
@@ -276,19 +329,28 @@ impl StackGraphContext {
         progress(ProgressEvent::PathsStitched {
             elapsed: start.elapsed(),
         })?;
-        let ref_symbol_index = get_symbol_of(&self.sggraph.nodes[node_index as usize])
-            .expect("Resolved reference has no corresponding symbol in SGGraph");
-        let symbol = &self.sggraph.symbols[ref_symbol_index];
-        Ok(ResolutionResult {
-            name: symbol.name.to_string(),
-            symbol_index: ref_symbol_index,
-            file: self.sggraph.files[symbol.file.unwrap()].clone(),
-            line: symbol.line.unwrap(),
-            column: symbol.column.unwrap(),
-            node_index,
-            resolved_in,
-            defs,
-        })
+        if let Some(node_index) = node_index {
+            let ref_symbol_index = get_symbol_of(&self.sggraph.nodes[node_index as usize])
+                .expect("Resolved reference has no corresponding symbol in SGGraph");
+            let symbol = &self.sggraph.symbols[ref_symbol_index];
+            Ok(ResolutionResult::ForOne(QueryOneResult {
+                name: symbol.name.to_string(),
+                symbol_index: ref_symbol_index,
+                file: self.sggraph.files[symbol.file.unwrap()].clone(),
+                line: symbol.line.unwrap(),
+                column: symbol.column.unwrap(),
+                node_index,
+                resolved_in,
+                defs,
+            }))
+        } else {
+            Ok(ResolutionResult::ForAll(QueryAllResult {
+                resolved_in,
+                defs,
+                total_defs,
+                total_refs,
+            }))
+        }
     }
 
     fn database<F>(&mut self, mut progress: F) -> Result<&Database>

@@ -32,7 +32,8 @@ pub trait ToCNFGrammar {
 
 impl ToCNFGrammar for CFLGraph {
     fn to_cnf_lines(self: &Self) -> (NonTerminal, Vec<(NonTerminal, CNFRuleRightPart)>) {
-        let mut rules = Vec::with_capacity(self.sg_unique_symbols_count * 4 + 4);
+        const PURIFY: bool = true;
+        let mut rules = Vec::with_capacity(self.sg_unique_symbols_count * 4 + 5);
         rules.push((
             NonTerminal("Eps".into()),
             CNFRuleRightPart::Terminal(CFLDisplaySymbol::Epsilon),
@@ -45,6 +46,10 @@ impl ToCNFGrammar for CFLGraph {
         rules.push((
             NonTerminal("S".into()),
             CNFRuleRightPart::NonTerminals(NonTerminal("S".into()), NonTerminal("Q".into())),
+        ));
+        rules.push((
+            NonTerminal("S".into()),
+            CNFRuleRightPart::NonTerminals(NonTerminal("S".into()), NonTerminal("V".into())), // V - virtuals
         ));
         (0..self.sg_unique_symbols_count).for_each(|r| {
             rules.push((
@@ -63,7 +68,11 @@ impl ToCNFGrammar for CFLGraph {
                 ),
             ));
             rules.push((
-                NonTerminal("Q".into()),
+                NonTerminal(if PURIFY && self.potentially_virtual_rules.contains(&r) {
+                    "V".into()
+                } else {
+                    "Q".into()
+                }),
                 CNFRuleRightPart::NonTerminals(
                     NonTerminal(format!("S#psh{r}")),
                     NonTerminal(format!("NT#pp{r}")),

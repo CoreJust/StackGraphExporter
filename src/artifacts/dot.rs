@@ -204,13 +204,27 @@ impl ToDOT for CFLGraph {
         }
 
         let mut start_nodes = HashSet::new();
+        let potential_virtuals = self
+            .metadata
+            .iter()
+            .filter(|m| !m.1.is_real)
+            .map(|m| &m.1.name)
+            .collect::<HashSet<_>>();
         for (i, edge) in self.edges.iter().enumerate() {
             let label = edge
                 .symbol
                 .and_then(|s| Some(format!("[label = \"{}\"]", Self::get_symbol_name(s))))
                 .unwrap_or("[label = \"\"]".to_string());
             dot_lines.push(format!("  {} -> {} {};", edge.from, edge.to, label));
-            if !for_query_generation && edge.symbol.is_some() && edge.symbol.unwrap() % 2 == 0 {
+            if !for_query_generation
+                && edge.symbol.is_some()
+                && edge.symbol.unwrap() % 2 == 0
+                && self
+                    .metadata
+                    .get(&edge.from)
+                    .and_then(|m| Some(m.is_real && !potential_virtuals.contains(&m.name)))
+                    .unwrap_or(false)
+            {
                 start_nodes.insert(edge.from);
             }
             if i % WRITE_ONCE_IN_N == 0 {
@@ -220,6 +234,12 @@ impl ToDOT for CFLGraph {
                     message: "Generating CFL DOT edges".into(),
                 })?;
             }
+        }
+        if !start_nodes.is_empty() {
+            crate::debug!(
+                "Found {} start nodes when creating dot-ucfs file",
+                start_nodes.len()
+            );
         }
         for node in start_nodes {
             dot_lines.push(format!("  start -> {node} ;"));

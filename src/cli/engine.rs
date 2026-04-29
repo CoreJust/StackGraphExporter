@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::core::{SGSymbolIndex, Stats};
 use crate::io::ElapsedAndCount;
-use crate::sg_query::{ProgressEvent, ResolutionResult};
+use crate::sg_query::{ProgressEvent, QueryAllResult, QueryOneResult};
 use crate::unsupported_features_cleaner::clean_unsupported_features;
 use crate::{
     artifacts::*,
@@ -216,7 +216,13 @@ impl Engine {
         self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index]
     }
 
-    pub fn query_all_symbols(&mut self, needed_at_most: u32) -> Result<Vec<ResolutionResult>> {
+    pub fn query_all_symbols(&mut self) -> Result<QueryAllResult> {
+        let ctx = self.ensure_context()?;
+        let mut renderer = ProgressRenderer::new();
+        ctx.resolve_all_references(|e| renderer.render(&e))
+    }
+
+    pub fn query_all_symbols_by_one(&mut self, needed_at_most: u32) -> Result<Vec<QueryOneResult>> {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
         let refs = ctx.find_reference_nodes(None, |e| renderer.render(&e))?;
@@ -261,7 +267,7 @@ impl Engine {
 
     pub fn retry_query_for_durations(
         &mut self,
-        resolution: &ResolutionResult,
+        resolution: &QueryOneResult,
         result: &mut [Duration],
     ) -> Result<()> {
         let ctx = self.ensure_context()?;
@@ -348,7 +354,7 @@ impl Engine {
         Ok((file, line_col.map(|(l, _)| l), line_col.map(|(_, c)| c)))
     }
 
-    pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<ResolutionResult> {
+    pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<QueryOneResult> {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
         let result = ctx.resolve_reference(node_idx, |e| renderer.render(&e));
@@ -521,12 +527,20 @@ impl Engine {
         let grammar_path = self.generated_artifacts[&ArtifactType::Kt].clone();
         let dot_path = self.generated_artifacts[&ArtifactType::DotUcfs].clone();
         let output_dir = self.output_dir.clone();
+        let sg_symbol_index = self
+            .ensure_context()?
+            .sggraph
+            .symbols
+            .iter()
+            .position(|sym| sym.name == symbol)
+            .expect("No such symbol");
+        let rule_index = self.rule_index_of_symbol(sg_symbol_index);
         let mut renderer = ProgressRenderer::new();
         ucfs_query(
             &grammar_path,
             &dot_path,
             &output_dir,
-            symbol,
+            rule_index,
             indices,
             |e| renderer.render(&e),
         )
@@ -629,5 +643,14 @@ impl Engine {
             };
             self.output_dir.join(filename)
         }
+    }
+
+    pub fn test(&mut self) -> Result<()> {
+        let syms = self.ensure_context()?.sggraph.symbols.clone();
+        for (i, s) in syms.iter().enumerate() {
+            let cfl_rule = self.ensure_cfl_graph()?.sg_to_cfl_rule_index[i];
+            crate::debug!("cfl {cfl_rule} -> {s:?}");
+        }
+        Ok(())
     }
 }

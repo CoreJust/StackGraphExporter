@@ -9,6 +9,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
 use crate::{
+    cfl_builder::SimplificationOptions,
     cli::engine::{ArtifactType, Engine},
     core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
     error::{Error, Result},
@@ -103,7 +104,13 @@ impl CommandProcessor {
             "cnf" => self.engine.gen_cnf = true,
             "verify" => self.engine.verify = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
-            "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = true,
+            "simplify" => self.engine.simplification_options.simplify = true,
+            "simplify-cfl" | "simplify_cfl" => {
+                self.engine.simplification_options.simplify_cfl = true
+            }
+            "no-simplify-cfl" | "no_simplify_cfl" => {
+                self.engine.simplification_options.simplify_cfl = false
+            }
             _ => {
                 crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl");
                 return Ok(());
@@ -129,7 +136,13 @@ impl CommandProcessor {
             "cnf" => self.engine.gen_cnf = false,
             "verify" => self.engine.verify = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
-            "simplify" | "simplify-cfl" | "simplify_cfl" => self.engine.simplify_cfl = false,
+            "simplify" => self.engine.simplification_options.simplify = false,
+            "simplify-cfl" | "simplify_cfl" => {
+                self.engine.simplification_options.simplify_cfl = false
+            }
+            "no-simplify-cfl" | "no_simplify_cfl" => {
+                self.engine.simplification_options.simplify_cfl = true
+            }
             _ => {
                 crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl", feature);
                 return Ok(());
@@ -334,9 +347,9 @@ impl CommandProcessor {
         use std::io::Write;
 
         self.engine.generate_artifact(ArtifactType::Kt, true)?;
-        self.engine.simplify_cfl = false;
+        self.engine.simplification_options = SimplificationOptions::no_simpify();
         self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
-        self.engine.simplify_cfl = true;
+        self.engine.simplification_options = SimplificationOptions::simpify();
         let nonsimplified_cfl_path = self.engine.output_path(ArtifactType::DotUcfs);
         self.engine.output_overrides.insert(
             ArtifactType::DotUcfs,
@@ -403,9 +416,9 @@ impl CommandProcessor {
         crate::info!("  Verify: {}", self.engine.verify);
         crate::info!("  All symbols: {}", self.engine.all_symbols);
         crate::info!(
-            "  Simplify CFL: {} (already simplified? {})",
-            self.engine.simplify_cfl,
-            self.engine.cfl_graph_simplified,
+            "  Simplify CFL:\n\t{:?};\n  Already simplified?\n\t{:?})",
+            self.engine.simplification_options,
+            self.engine.used_simplification_options,
         );
         crate::info!("  Output directory: {}", self.engine.output_dir.display());
         crate::info!("  Artifact overrides: {:?}", self.engine.output_overrides);

@@ -9,7 +9,7 @@ use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
 use crate::io::ElapsedAndCount;
 
-const WRITE_ONCE_IN_N: usize = 64;
+const WRITE_ONCE_IN_N: usize = 128;
 
 pub trait ToDOT {
     const ARTIFACT_NAME: &'static str;

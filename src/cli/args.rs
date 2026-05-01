@@ -43,8 +43,25 @@ pub struct OpenArgs {
     #[arg(long, alias = "all")]
     pub all_symbols: bool,
 
-    #[arg(long, alias = "simplify")]
-    pub simplify_cfl: bool,
+    #[arg(long)]
+    pub simplify: bool,
+    #[arg(long)]
+    pub no_simplify_cfl: bool,
+    #[arg(long)]
+    pub no_simplify_transient: bool,
+    #[arg(
+        long,
+        alias = "max-simplification-iterations",
+        alias = "max-transient-simplify-iterations",
+        alias = "max-simplify-iterations"
+    )]
+    pub max_transient_simplification_iterations: Option<usize>,
+    #[arg(long, alias = "eps-tolerance")]
+    pub eps_removal_tolerance: Option<isize>,
+    #[arg(long)]
+    pub remove_unreachable: bool,
+    #[arg(long, alias = "with-front")]
+    pub remove_unreachable_with_front: bool,
 
     // For KotGLL only
     #[arg(long)]

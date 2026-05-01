@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::cfl_builder::SimplificationOptions;
 use crate::core::{SGSymbolIndex, Stats};
 use crate::io::ElapsedAndCount;
 use crate::sg_query::{ProgressEvent, QueryAllResult, QueryOneResult};
@@ -37,7 +38,8 @@ pub struct Engine {
     pub ucfs_enabled: bool,
     pub verify: bool,
     pub all_symbols: bool,
-    pub simplify_cfl: bool,
+    pub simplification_options: SimplificationOptions,
+    pub used_simplification_options: SimplificationOptions,
     pub sppf: bool,
     pub verbose: bool,
     pub gen_cfg: bool,
@@ -56,7 +58,6 @@ pub struct Engine {
     context: Option<StackGraphContext>,
     cfl_graph: Option<CFLGraph>,
     cfl_pop_map: Option<HashMap<SGNodeIndex, CFLNodeIndex>>,
-    pub cfl_graph_simplified: bool,
     nodes_with_partials: HashSet<SGNodeIndex>,
 }
 
@@ -102,7 +103,15 @@ impl Engine {
             ucfs_enabled: args.ucfs,
             verify: args.verify,
             all_symbols: args.all_symbols,
-            simplify_cfl: args.simplify_cfl,
+            simplification_options: SimplificationOptions::make(
+                args.simplify,
+                args.no_simplify_cfl,
+                args.no_simplify_transient,
+                args.max_transient_simplification_iterations,
+                args.eps_removal_tolerance,
+                args.remove_unreachable,
+                args.remove_unreachable_with_front,
+            ),
             sppf: args.sppf,
             verbose: args.verbose,
             gen_cfg: args.cfg,
@@ -123,7 +132,7 @@ impl Engine {
             context: None,
             cfl_graph: None,
             cfl_pop_map: None,
-            cfl_graph_simplified: false,
+            used_simplification_options: SimplificationOptions::no_simpify(),
             nodes_with_partials: HashSet::new(),
         }
     }
@@ -173,10 +182,10 @@ impl Engine {
     }
 
     fn ensure_cfl_graph<'a>(&'a mut self) -> Result<&'a CFLGraph> {
-        let simplify = self.simplify_cfl;
-        if self.cfl_graph.is_some() && self.cfl_graph_simplified == simplify {
+        let simplify = self.simplification_options.clone();
+        if self.cfl_graph.is_some() && self.used_simplification_options == simplify {
             if self.verbose {
-                crate::debug!("ensure_cfl_graph: CFL graph already exists, returning it (simplified? {simplify})");
+                crate::debug!("ensure_cfl_graph: CFL graph already exists, returning it (simplified? {simplify:?})");
             }
             Ok(self.cfl_graph.as_ref().unwrap())
         } else {
@@ -184,7 +193,7 @@ impl Engine {
                 let ctx = self.ensure_context()?;
                 let mut renderer = ProgressRenderer::new();
                 let (graph, pop_map, built_in) =
-                    convert_to_cfl(&ctx.sggraph, simplify, |e| renderer.render(&e))?;
+                    convert_to_cfl(&ctx.sggraph, &simplify, |e| renderer.render(&e))?;
                 let vertices_count = graph
                     .edges
                     .iter()
@@ -196,7 +205,7 @@ impl Engine {
                     graph.edges.len(),
                     graph.sg_unique_symbols_count * 2 + 1,
                 );
-                let cfl_stats = if simplify {
+                let cfl_stats = if simplify.simplify {
                     &mut self.stats.cfl_graph_simplified
                 } else {
                     &mut self.stats.cfl_graph
@@ -207,7 +216,7 @@ impl Engine {
                 self.stats.cfl_grammar.rules = graph.sg_unique_symbols_count * 2 + 1;
                 (Some(graph), Some(pop_map))
             };
-            self.cfl_graph_simplified = simplify;
+            self.used_simplification_options = simplify;
             Ok(self.cfl_graph.as_ref().unwrap())
         }
     }
@@ -297,7 +306,7 @@ impl Engine {
         &mut self,
         indices: &[SGNodeIndex],
     ) -> Result<Vec<CFLNodeIndex>> {
-        if !self.simplify_cfl {
+        if !self.simplification_options.simplify {
             // If graph wasn't simplified, then in-nodes have the same IDs
             // as in sggraph.
             Ok(indices.iter().map(|i| *i).collect::<Vec<CFLNodeIndex>>())
@@ -572,7 +581,7 @@ impl Engine {
                 let cfl = self.ensure_cfl_graph()?;
                 let mut renderer = ProgressRenderer::new();
                 cfl.write_to_dot_file(&path, true, for_query_generation, |e| renderer.render(&e))?;
-                let cfl_stats = if self.cfl_graph_simplified {
+                let cfl_stats = if self.used_simplification_options.simplify {
                     &mut self.stats.cfl_graph_simplified
                 } else {
                     &mut self.stats.cfl_graph

@@ -221,7 +221,42 @@ For grammar files a placeholder is added: `<placeholder nt=\"{start_symbol}\"/>`
 
 For graph files, there is no need for a placeholder. Just add one or more lines `start -> {n};` after `{` to run queries from nodes with index `{n}` (or do not add those to run the query against the whole graph).
 
-8. Other flags:
+8. Simplification flags:
+```
+      --simplify
+```
+
+Enables simplification.
+
+```
+      --no-simplify-transient
+      --no-simplify-cfl
+```
+
+Disable simplification on transient and CFL stages respectively.
+
+```
+      --max-[transient-]simplification-iterations or --max-[transient-]simplify-iterations <NUMBER>
+```
+
+Limits the number of optimization iterations during transient stage. Be default they are unlimited and continue as long as there is something to simplify.
+
+```
+      --eps-removal-tolerance or --eps-tolerance <NUMBER>
+```
+
+Sets the maximum edges count difference from removing a single epsilon node during transient stage. Default is 5.
+
+```
+      --remove-unreachable
+      --remove-unreachable-with-front or --with-front
+```
+
+Enables reachability test. *It can significantly affect performance*, especially the option with front.
+
+See more about simplification heuristics below.
+
+9. Other flags:
 ```
       --verify
 ```
@@ -235,12 +270,6 @@ Enables verification. When verification is enabled and the query is done with Ko
 By default, in the query mode you you only see nodes which are at the beginning of at least one partial path. You can disable this behaviour with this flag and see all the nodes for the symbol you requested.
 
 *Note: even in medium-sized projects one symbol might have hundreds or thousands of nodes. Filtering them by having at least one partial path can reduce the number by several times. It was verified emperically that nodes without partial paths are resolbed to nothing. But it must be further investigated.*
-
-```
-      --simplify-cfl
-```
-
-Currently produced CFL graphs have a lot of epsilon edges. Some might be easily pruned, which is enabled with this flag.
 
 ```
   -v, --verbose
@@ -300,3 +329,14 @@ FOR EACH i {
   Q -> S#psh$i NT#pp$i
 }
 ```
+
+## Simplification
+
+Currently there are several mechanisms of simplification. Most are done during the transient stage, where the graph is like CFL graph apart from still using labeled nodes instead of edges. There are:
+
+1. *Invalid pairs removal*. If there is an edge from pushX to popY and X != Y, then no path can include such an edge and we can safely prune it.
+2. *Invalid end nodes removal*. An end node here is a node without incoming or outcoming edges. Thus, it can only be in the path start or end respectively. A path can not begin with a pop node or with a virtual node, and cannot end with a push node or a virtual node. Such nodes can be safely pruned.
+3. *Epsilon nodes removal*. The idea is that we can safely remove epsilon nodes as long as we reconnect all the incoming edges to all the nodes to which outcoming edges from this epsilon node existed. (e.g. if we have `A -> E, B -> E, E -> C, E -> D`, then we can remove `E` and get `A -> C, A -> D, B -> C, B -> D`). But we cannot just remove all the epsilon nodes (or well, we can, but the number of edges in the graph can go square). With each removal we prune `(incoming + outcoming)` edges, but create `(incoming * outcoming)` new ones. So if the difference is below some tolerance value, we do the removal.
+4. *Weakly connected components pruning*. If there is no such symbol X that a WCC contains at least one pair of real pushX and popX, then no paths can go through this component and we can safely prune it completely.
+5. *Reachability test*. The idea is to start a wave algorithm from push nodes forward and then separately from pop nodes backward. This way, all nodes are marked with what push nodes can theoretically reach them and what pop nodes can be theoretically reached from them. It doesn't account for the symbol stack, but still we can find and prune nodes with empty intersection between these 2 sets.
+6. *Reachability test with front*. A slightly advanced version of the previous test. We additionally mark what pushes / pops can potentially immediately reach / be reached (by immediately I mean on top of symbol stack).

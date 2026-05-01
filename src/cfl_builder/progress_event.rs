@@ -8,6 +8,14 @@ const PROGRESS_ONCE_IN: usize = 128;
 
 pub enum ProgressEvent {
     BuildingSymbolRules(ElapsedAndCount),
+    BuildingTransientNodes(ElapsedAndCount),
+    PopulatingTransientNodes(ElapsedAndCount),
+    SimplifyingTransientGraph {
+        substage: &'static str,
+        iteration: usize,
+        elapsed_and_count: ElapsedAndCount,
+    },
+    TransientGraphBuilt(Elapsed),
     BuildingOutIds(ElapsedAndCount),
     BuildingForCurrentEdges(ElapsedAndCount),
     BuildingSymbolEdges(ElapsedAndCount),
@@ -26,6 +34,7 @@ where
 {
     cb: F,
     pub start: Instant,
+    pub simplification_iteration: usize, // Only for SimplifyingTransientGraph
     pub stage_total: usize,
 }
 
@@ -37,7 +46,24 @@ where
         Self {
             cb,
             start: Instant::now(),
+            simplification_iteration: 0,
             stage_total: 0,
+        }
+    }
+
+    pub fn emit_simplification_nth(&mut self, substage: &'static str, i: usize) -> Result<()> {
+        if i % PROGRESS_ONCE_IN == 0 {
+            (self.cb)(ProgressEvent::SimplifyingTransientGraph {
+                substage,
+                iteration: self.simplification_iteration,
+                elapsed_and_count: ElapsedAndCount {
+                    current: i,
+                    total: self.stage_total,
+                    elapsed: self.start.elapsed(),
+                },
+            })
+        } else {
+            Ok(())
         }
     }
 
@@ -72,6 +98,25 @@ impl fmt::Display for ProgressEvent {
             ProgressEvent::BuildingSymbolRules { .. } => {
                 write!(f, "Building symbol rules")
             }
+            ProgressEvent::BuildingTransientNodes { .. } => {
+                write!(f, "Building transient nodes")
+            }
+            ProgressEvent::PopulatingTransientNodes { .. } => {
+                write!(f, "Populating transient nodes")
+            }
+            ProgressEvent::SimplifyingTransientGraph {
+                substage,
+                iteration,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Simplifying transient graph (iteration {iteration}): {substage}"
+                )
+            }
+            ProgressEvent::TransientGraphBuilt { .. } => {
+                write!(f, "Transient graph built successfully")
+            }
             ProgressEvent::BuildingOutIds { .. } => {
                 write!(f, "Building out node IDs")
             }
@@ -102,6 +147,18 @@ impl IOProgressEvent for ProgressEvent {
         match self {
             ProgressEvent::BuildingSymbolRules(elapsed_and_count) => {
                 ProgressState::from_elapsed_and_count(elapsed_and_count, false)
+            }
+            ProgressEvent::BuildingTransientNodes(elapsed_and_count) => {
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
+            }
+            ProgressEvent::PopulatingTransientNodes(elapsed_and_count) => {
+                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
+            }
+            ProgressEvent::SimplifyingTransientGraph {
+                elapsed_and_count, ..
+            } => ProgressState::from_elapsed_and_count(elapsed_and_count, false),
+            ProgressEvent::TransientGraphBuilt(elapsed) => {
+                ProgressState::from_elapsed(elapsed, true)
             }
             ProgressEvent::BuildingOutIds(elapsed_and_count) => {
                 ProgressState::from_elapsed_and_count(elapsed_and_count, false)

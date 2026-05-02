@@ -84,7 +84,7 @@ impl StackGraphContext {
             let symbol_idx = match node {
                 SGNode::Push(s) | SGNode::PushScoped(s, _) => Some(*s),
                 SGNode::Pop(s) | SGNode::PopScoped(s) => {
-                    let sym = &self.sggraph.symbols[*s];
+                    let sym = &self.sggraph.symbols[*s as usize];
                     if (by_symbol.is_none() || sym.name == by_symbol.unwrap()) && sym.real {
                         found_defs += 1;
                     }
@@ -93,7 +93,7 @@ impl StackGraphContext {
                 _ => None,
             };
             if let Some(sym_idx) = symbol_idx {
-                let sym = &self.sggraph.symbols[sym_idx];
+                let sym = &self.sggraph.symbols[sym_idx as usize];
                 if (by_symbol.is_none() || sym.name == by_symbol.unwrap()) && sym.real {
                     result.push(idx as SGNodeIndex);
                 }
@@ -332,11 +332,11 @@ impl StackGraphContext {
         if let Some(node_index) = node_index {
             let ref_symbol_index = get_symbol_of(&self.sggraph.nodes[node_index as usize])
                 .expect("Resolved reference has no corresponding symbol in SGGraph");
-            let symbol = &self.sggraph.symbols[ref_symbol_index];
+            let symbol = &self.sggraph.symbols[ref_symbol_index as usize];
             Ok(ResolutionResult::ForOne(QueryOneResult {
                 name: symbol.name.to_string(),
                 symbol_index: ref_symbol_index,
-                file: self.sggraph.files[symbol.file.unwrap()].clone(),
+                file: self.sggraph.files[symbol.file.unwrap() as usize].clone(),
                 line: symbol.line.unwrap(),
                 column: symbol.column.unwrap(),
                 node_index,

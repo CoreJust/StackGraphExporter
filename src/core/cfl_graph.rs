@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::SGNodeIndex;
 
-pub type CFLSymbolIndex = usize;
-pub type CFLRuleIndex = usize;
+pub type CFLSymbolIndex = u32;
+pub type CFLRuleIndex = u32;
 pub type CFLNodeIndex = u32;
-pub type CFLFileIndex = usize;
+pub type CFLFileIndex = u32;
 
 #[derive(Debug, Clone)]
 pub struct CFLEdge {
@@ -36,7 +36,7 @@ pub struct CFLGraph {
     pub files: Vec<String>,
     pub potentially_virtual_rules: HashSet<CFLRuleIndex>, // Those might contain virtual symbols and must not be queried
     pub sg_to_cfl_rule_index: Vec<CFLRuleIndex>,
-    pub sg_unique_symbols_count: usize,
+    pub cfl_push_pop_rules_count: u32,
 }
 
 impl CFLGraph {

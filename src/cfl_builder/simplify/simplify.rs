@@ -1,14 +1,17 @@
 use crate::{
     cfl_builder::{
         progress_event::{ProgressEvent, ProgressMonitor},
+        simplification_options::ReachabilityTestMode,
         simplify::{
             invalid_end_nodes_removal::remove_invalid_end_nodes,
             invalid_pairs_removal::remove_invalid_pairs,
-            reachability_state::{DoubleReachabilityState, TrivialReachabilityState},
+            reachability_test::{
+                remove_unreachable, BitSetFixed, DoubleReachabilityState, SingleReachabilityState,
+                TrivialReachabilityState,
+            },
             simplification_stats::SimplificationStats,
             transient_graph_reindexer::reindex_graph,
             trivial_eps_removal::remove_trivial_eps_nodes,
-            unreachable_removal::remove_unreachable,
             weak_components_purger::remove_weak_components_without_paths,
         },
         transient_graph::TGraph,
@@ -57,21 +60,28 @@ where
 
         // Unreachable removal is relatively heavier than the other heuristics, thus
         // we do it only after the other heuristics are done.
-        if simplification_options.remove_unreachable {
+        if simplification_options.remove_unreachable != ReachabilityTestMode::None {
             let old_unreachable_removed = stats.unreachable_nodes_removed;
-            if simplification_options.remove_unreachable_with_front {
-                remove_unreachable::<DoubleReachabilityState, _>(
+            match simplification_options.remove_unreachable {
+                ReachabilityTestMode::Trivial => remove_unreachable::<TrivialReachabilityState, _>(
                     tgraph,
                     progress_monitor,
                     &mut stats,
-                )?;
-            } else {
-                remove_unreachable::<TrivialReachabilityState, _>(
-                    tgraph,
-                    progress_monitor,
-                    &mut stats,
-                )?;
-            }
+                ),
+                ReachabilityTestMode::Single => remove_unreachable::<
+                    SingleReachabilityState<BitSetFixed>,
+                    _,
+                >(
+                    tgraph, progress_monitor, &mut stats
+                ),
+                ReachabilityTestMode::Double => remove_unreachable::<
+                    DoubleReachabilityState<BitSetFixed>,
+                    _,
+                >(
+                    tgraph, progress_monitor, &mut stats
+                ),
+                ReachabilityTestMode::None => unreachable!(),
+            }?;
             if old_unreachable_removed != stats.unreachable_nodes_removed {
                 if simplification_options
                     .transient_simplification_iterations

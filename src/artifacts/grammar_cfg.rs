@@ -20,8 +20,8 @@ pub trait ToCFGGrammar {
 
 impl ToCFGGrammar for CFLGraph {
     fn to_grammar_lines(self: &Self) -> Vec<String> {
-        let mut result = Vec::with_capacity(self.sg_unique_symbols_count * 2 + 2);
-        (0..self.sg_unique_symbols_count).for_each(|r| {
+        let mut result = Vec::with_capacity((self.cfl_push_pop_rules_count * 2 + 2) as usize);
+        (0..self.cfl_push_pop_rules_count).for_each(|r| {
             result.push(format!(
                 "Nonterminal(\"S\") -> Terminal(\"psh{0}\") S Terminal(\"pp{0}\")",
                 r,

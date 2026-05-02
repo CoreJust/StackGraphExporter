@@ -1,5 +1,5 @@
 use super::indexers::{FileIndexer, NodeIdIndexer, SymbolIndexer};
-use crate::core::{SGEdge, SGNode, SGNodeId, SGNodeIndex, SGSymbol, SGSymbolIndex};
+use crate::core::{SGEdge, SGFileIndex, SGNode, SGNodeId, SGNodeIndex, SGSymbol, SGSymbolIndex};
 use crate::error::{Error, Result};
 use stack_graphs::serde::{Edge, Node, NodeID, SourceInfo};
 
@@ -10,7 +10,7 @@ pub struct Indexers<'a> {
 }
 
 fn make_symbol(
-    file: Option<usize>,
+    file: Option<SGFileIndex>,
     symbol: &String,
     is_real: bool,
     source_info: &Option<SourceInfo>,

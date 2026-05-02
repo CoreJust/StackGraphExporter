@@ -1,10 +1,12 @@
 use std::fmt::{Display, Formatter};
 
+use crate::core::CFLRuleIndex;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum CFLDisplaySymbol {
     Epsilon,
-    Pop(usize),
-    Push(usize),
+    Pop(CFLRuleIndex),
+    Push(CFLRuleIndex),
 }
 
 impl Display for CFLDisplaySymbol {

@@ -22,7 +22,7 @@ pub struct TGraph {
     pub files: Vec<String>,
     pub potentially_virtual_rules: HashSet<CFLRuleIndex>, // Those might contain virtual symbols and must not be queried
     pub sg_to_cfl_rule_index: Vec<CFLRuleIndex>,
-    pub sg_unique_symbols_count: usize,
+    pub cfl_push_pop_rules_count: u32,
     pub edges_count: usize,
 }
 

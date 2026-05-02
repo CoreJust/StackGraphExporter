@@ -1,8 +1,8 @@
-use crate::core::{SGNodeId, SGNodeIndex, SGSymbol, SGSymbolIndex};
+use crate::core::{SGFileIndex, SGNodeId, SGNodeIndex, SGSymbol, SGSymbolIndex};
 use std::collections::HashMap;
 
 pub struct FileIndexer {
-    name_to_index: HashMap<String, usize>,
+    name_to_index: HashMap<String, SGFileIndex>,
     names: Vec<String>,
 }
 
@@ -14,17 +14,17 @@ impl FileIndexer {
         }
     }
 
-    pub fn index_of(&mut self, name: &str) -> usize {
+    pub fn index_of(&mut self, name: &str) -> SGFileIndex {
         if let Some(&idx) = self.name_to_index.get(name) {
             return idx;
         }
-        let idx = self.names.len();
+        let idx = self.names.len() as SGFileIndex;
         self.names.push(name.to_string());
         self.name_to_index.insert(name.to_string(), idx);
         idx
     }
 
-    pub fn get_index(&self, name: &str) -> Option<usize> {
+    pub fn get_index(&self, name: &str) -> Option<SGFileIndex> {
         self.name_to_index.get(name).copied()
     }
 
@@ -34,7 +34,7 @@ impl FileIndexer {
 }
 
 pub struct SymbolIndexer {
-    symbol_to_index: HashMap<SGSymbol, usize>,
+    symbol_to_index: HashMap<SGSymbol, SGSymbolIndex>,
     symbols: Vec<SGSymbol>,
 }
 
@@ -50,7 +50,7 @@ impl SymbolIndexer {
         if let Some(&idx) = self.symbol_to_index.get(&symbol) {
             return idx;
         }
-        let idx = self.symbols.len();
+        let idx = self.symbols.len() as SGSymbolIndex;
         self.symbols.push(symbol.clone());
         self.symbol_to_index.insert(symbol, idx);
         idx

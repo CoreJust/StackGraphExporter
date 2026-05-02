@@ -10,7 +10,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     cfl_builder::SimplificationOptions,
-    cli::engine::{ArtifactType, Engine},
+    cli::{artifact_type::ArtifactType, engine::Engine},
     core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
     error::{Error, Result},
     io::{ElapsedAndCount, ProgressRenderer},

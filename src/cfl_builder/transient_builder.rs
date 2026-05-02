@@ -29,7 +29,7 @@ fn is_push_node(node: &SGNode) -> bool {
 fn generate_symbols<F>(
     symbols: &[SGSymbol],
     progress: &mut ProgressMonitor<F>,
-) -> Result<(Vec<CFLSymbolIndex>, usize)>
+) -> Result<(Vec<CFLSymbolIndex>, u32)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
@@ -42,12 +42,12 @@ where
         if let Some(cfl_idx) = symbols_mapping.get(&symbol.name) {
             result.push(*cfl_idx);
         } else {
-            let cfl_idx = symbols_mapping.len();
+            let cfl_idx = symbols_mapping.len() as CFLSymbolIndex;
             symbols_mapping.insert(&symbol.name, cfl_idx);
             result.push(cfl_idx);
         }
     }
-    Ok((result, symbols_mapping.len()))
+    Ok((result, symbols_mapping.len() as u32))
 }
 
 fn generate_empty_nodes<F>(
@@ -64,8 +64,8 @@ where
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingTransientNodes(v))?;
         if let Some(symbol_idx) = get_symbol_of(src_node) {
-            let cfl_rule_idx = symbol_mapping[symbol_idx];
-            let symbol = &src_symbols[symbol_idx];
+            let cfl_rule_idx = symbol_mapping[symbol_idx as usize];
+            let symbol = &src_symbols[symbol_idx as usize];
             let metadata = CFLNodeMetadata {
                 name: symbol.name.clone(),
                 is_real: symbol.real,
@@ -130,7 +130,7 @@ pub fn convert_to_transient<F>(
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    let (sg_to_cfl_rule_index, sg_unique_symbols_count) =
+    let (sg_to_cfl_rule_index, cfl_push_pop_rules_count) =
         generate_symbols(&sggraph.symbols, progress_monitor)?;
     let nodes = generate_nodes(sggraph, &sg_to_cfl_rule_index, progress_monitor)?;
 
@@ -147,7 +147,7 @@ where
         files: sggraph.files.clone(),
         potentially_virtual_rules,
         sg_to_cfl_rule_index,
-        sg_unique_symbols_count,
+        cfl_push_pop_rules_count,
         edges_count: sggraph.edges.len(),
     };
 

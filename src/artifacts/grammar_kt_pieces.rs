@@ -7,7 +7,7 @@ import org.ucfs.rsm.symbol.Term
 ";
 
 pub fn kt_grammar_productions_map_build(
-    sg_symbols_count: usize,
+    sg_symbols_count: u32,
     for_query_generation: bool,
 ) -> String {
     if for_query_generation {

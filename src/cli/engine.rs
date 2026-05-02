@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::cfl_builder::SimplificationOptions;
-use crate::core::{SGSymbolIndex, Stats};
+use crate::cli::artifact_type::ArtifactType;
+use crate::core::{CFLRuleIndex, SGSymbolIndex, Stats};
 use crate::io::ElapsedAndCount;
 use crate::sg_query::{ProgressEvent, QueryAllResult, QueryOneResult};
 use crate::unsupported_features_cleaner::clean_unsupported_features;
@@ -17,18 +18,6 @@ use crate::{
     loading::{load_stack_graph, Language},
     sg_builder::{build_sggraph, StackGraphContext},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ArtifactType {
-    Cfg,
-    Csv,
-    Dot,
-    DotUcfs,
-    Kt,
-    Json,
-    G,
-    Cnf,
-}
 
 pub struct Engine {
     stack_graph: Option<stack_graphs::graph::StackGraph>,
@@ -50,6 +39,7 @@ pub struct Engine {
     pub gen_json: bool,
     pub gen_g: bool,
     pub gen_cnf: bool,
+    pub gen_cnf_cfg: bool,
     pub output_dir: PathBuf,
     pub output_overrides: HashMap<ArtifactType, PathBuf>,
     pub kotgll_path: Option<PathBuf>,
@@ -94,6 +84,9 @@ impl Engine {
         if let Some(p) = args.output_cnf {
             overrides.insert(ArtifactType::Cnf, p);
         }
+        if let Some(p) = args.output_cnf_cfg {
+            overrides.insert(ArtifactType::CnfCfg, p);
+        }
 
         Self {
             stack_graph: None,
@@ -109,6 +102,7 @@ impl Engine {
                 args.no_simplify_transient,
                 args.max_transient_simplification_iterations,
                 args.eps_removal_tolerance,
+                args.remove_unreachable_trivial,
                 args.remove_unreachable,
                 args.remove_unreachable_with_front,
             ),
@@ -122,6 +116,7 @@ impl Engine {
             gen_json: args.stack_graph_json,
             gen_g: args.g,
             gen_cnf: args.cnf,
+            gen_cnf_cfg: args.cnf_cfg,
             output_dir,
             output_overrides: overrides,
             kotgll_path: args.kotgll_path,
@@ -203,7 +198,7 @@ impl Engine {
                 crate::info!(
                     "Generated CFL graph size: {vertices_count} vertices, {} edges; {} rules",
                     graph.edges.len(),
-                    graph.sg_unique_symbols_count * 2 + 1,
+                    graph.cfl_push_pop_rules_count * 2 + 1,
                 );
                 let cfl_stats = if simplify.simplify {
                     &mut self.stats.cfl_graph_simplified
@@ -213,7 +208,7 @@ impl Engine {
                 cfl_stats.built_in = built_in.as_millis() as u64;
                 cfl_stats.vertices = vertices_count as usize;
                 cfl_stats.edges = graph.edges.len();
-                self.stats.cfl_grammar.rules = graph.sg_unique_symbols_count * 2 + 1;
+                self.stats.cfl_grammar.rules = graph.cfl_push_pop_rules_count * 2 + 1;
                 (Some(graph), Some(pop_map))
             };
             self.used_simplification_options = simplify;
@@ -221,8 +216,8 @@ impl Engine {
         }
     }
 
-    pub fn rule_index_of_symbol(&self, index: SGSymbolIndex) -> usize {
-        self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index]
+    pub fn rule_index_of_symbol(&self, index: SGSymbolIndex) -> CFLRuleIndex {
+        self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index as usize]
     }
 
     pub fn query_all_symbols(&mut self) -> Result<QueryAllResult> {
@@ -349,7 +344,9 @@ impl Engine {
     ) -> Result<(Option<String>, Option<usize>, Option<usize>)> {
         let ctx = self.ensure_context()?;
         let node_id = &ctx.sggraph.ids[node_idx as usize];
-        let file = node_id.file.and_then(|f| ctx.sggraph.files.get(f).cloned());
+        let file = node_id
+            .file
+            .and_then(|f| ctx.sggraph.files.get(f as usize).cloned());
         let line_col = ctx
             .node_handle_map
             .get(node_id)
@@ -500,7 +497,11 @@ impl Engine {
         {
             let file_str = meta
                 .file
-                .and_then(|f| self.cfl_graph.as_ref().and_then(|g| g.files.get(f)))
+                .and_then(|f| {
+                    self.cfl_graph
+                        .as_ref()
+                        .and_then(|g| g.files.get(f as usize))
+                })
                 .map(String::as_str)
                 .unwrap_or("");
             format!(
@@ -542,7 +543,7 @@ impl Engine {
             .symbols
             .iter()
             .position(|sym| sym.name == symbol)
-            .expect("No such symbol");
+            .expect("No such symbol") as SGSymbolIndex;
         let rule_index = self.rule_index_of_symbol(sg_symbol_index);
         let mut renderer = ProgressRenderer::new();
         ucfs_query(
@@ -612,6 +613,10 @@ impl Engine {
                 let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_cnf_file(&path)?;
             }
+            ArtifactType::CnfCfg => {
+                let cfl = self.ensure_cfl_graph()?;
+                cfl.write_to_cnf_cfg_file(&path)?;
+            }
         }
         Ok(path)
     }
@@ -626,6 +631,7 @@ impl Engine {
             (self.gen_json, ArtifactType::Json),
             (self.gen_g, ArtifactType::G),
             (self.gen_cnf, ArtifactType::Cnf),
+            (self.gen_cnf_cfg, ArtifactType::CnfCfg),
         ];
         for (enabled, artifact) in artifacts {
             if enabled {
@@ -640,17 +646,7 @@ impl Engine {
         if let Some(overridden) = self.output_overrides.get(&artifact) {
             overridden.clone()
         } else {
-            let filename = match artifact {
-                ArtifactType::Cfg => "cfl_grammar.cfg",
-                ArtifactType::Csv => "cfl.csv",
-                ArtifactType::Dot => "stackgraph.dot",
-                ArtifactType::DotUcfs => "cfl_ucfs.dot",
-                ArtifactType::Kt => "UCFSGrammar.kt",
-                ArtifactType::Json => "stackgraph.json",
-                ArtifactType::G => "cfl.g",
-                ArtifactType::Cnf => "cfl_grammar.cnf",
-            };
-            self.output_dir.join(filename)
+            self.output_dir.join(artifact.default_file_name())
         }
     }
 

@@ -23,7 +23,7 @@ pub struct CFLGraphStats {
 pub struct CFLGrammarStats {
     pub path: String,
     pub file_size: u64,
-    pub rules: usize,
+    pub rules: u32,
 }
 
 #[derive(Serialize)]

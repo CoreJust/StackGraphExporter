@@ -107,7 +107,7 @@ where
         let mut kt_lines = vec![KT_GRAMMAR_HEADER.to_string()];
         self.append_class_declaration(&mut kt_lines);
         self.append_non_terminal_declarations(&mut kt_lines)?;
-        self.append_init_block(&mut kt_lines, self.graph.sg_unique_symbols_count)?;
+        self.append_init_block(&mut kt_lines, self.graph.cfl_push_pop_rules_count)?;
 
         kt_lines.push("}".to_string());
         Ok(kt_lines)
@@ -132,7 +132,7 @@ where
     fn append_init_block(
         &mut self,
         kt_lines: &mut Vec<String>,
-        sg_symbols_count: usize,
+        sg_symbols_count: u32,
     ) -> Result<()> {
         kt_lines.push("\tinit {".to_string());
         (self.progress)(ProgressEvent::GeneratingArtifact {

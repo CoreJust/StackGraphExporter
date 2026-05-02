@@ -136,6 +136,12 @@ Note that the artifacts are not generated automatically, you need to either run 
 
 7. Immediate query flags:
 ```
+      --create
+```
+
+Immediately generate all explicitly requested artifacts (in all-paths query mode) and quit.
+
+```
   -s, --symbol <SYMBOL>
       --source <SOURCE>
 ```
@@ -248,6 +254,7 @@ Limits the number of optimization iterations during transient stage. Be default 
 Sets the maximum edges count difference from removing a single epsilon node during transient stage. Default is 5.
 
 ```
+      --remove-unreachable-trivial
       --remove-unreachable
       --remove-unreachable-with-front or --with-front
 ```
@@ -338,5 +345,5 @@ Currently there are several mechanisms of simplification. Most are done during t
 2. *Invalid end nodes removal*. An end node here is a node without incoming or outcoming edges. Thus, it can only be in the path start or end respectively. A path can not begin with a pop node or with a virtual node, and cannot end with a push node or a virtual node. Such nodes can be safely pruned.
 3. *Epsilon nodes removal*. The idea is that we can safely remove epsilon nodes as long as we reconnect all the incoming edges to all the nodes to which outcoming edges from this epsilon node existed. (e.g. if we have `A -> E, B -> E, E -> C, E -> D`, then we can remove `E` and get `A -> C, A -> D, B -> C, B -> D`). But we cannot just remove all the epsilon nodes (or well, we can, but the number of edges in the graph can go square). With each removal we prune `(incoming + outcoming)` edges, but create `(incoming * outcoming)` new ones. So if the difference is below some tolerance value, we do the removal.
 4. *Weakly connected components pruning*. If there is no such symbol X that a WCC contains at least one pair of real pushX and popX, then no paths can go through this component and we can safely prune it completely.
-5. *Reachability test*. The idea is to start a wave algorithm from push nodes forward and then separately from pop nodes backward. This way, all nodes are marked with what push nodes can theoretically reach them and what pop nodes can be theoretically reached from them. It doesn't account for the symbol stack, but still we can find and prune nodes with empty intersection between these 2 sets.
+5. *Reachability test*. The idea is to start a wave algorithm from push nodes forward and then separately from pop nodes backward. This way, all nodes are marked with what push nodes can theoretically reach them and what pop nodes can be theoretically reached from them. It doesn't account for the symbol stack, but still we can find and prune nodes with empty intersection between these 2 sets. The trivial version is a simplified one when we only check if any push and any pop are potentially reachable. It is the fastest one, but also produces the least results.
 6. *Reachability test with front*. A slightly advanced version of the previous test. We additionally mark what pushes / pops can potentially immediately reach / be reached (by immediately I mean on top of symbol stack).

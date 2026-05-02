@@ -59,6 +59,8 @@ pub struct OpenArgs {
     #[arg(long, alias = "eps-tolerance")]
     pub eps_removal_tolerance: Option<isize>,
     #[arg(long)]
+    pub remove_unreachable_trivial: bool,
+    #[arg(long)]
     pub remove_unreachable: bool,
     #[arg(long, alias = "with-front")]
     pub remove_unreachable_with_front: bool,
@@ -86,6 +88,8 @@ pub struct OpenArgs {
     pub g: bool,
     #[arg(long)]
     pub cnf: bool,
+    #[arg(long)]
+    pub cnf_cfg: bool,
 
     // Output paths
     #[arg(short, long)]
@@ -106,6 +110,8 @@ pub struct OpenArgs {
     pub output_g: Option<PathBuf>,
     #[arg(long)]
     pub output_cnf: Option<PathBuf>,
+    #[arg(long)]
+    pub output_cnf_cfg: Option<PathBuf>,
 
     // Immediate queries
     #[arg(short = 's', long)]
@@ -116,6 +122,8 @@ pub struct OpenArgs {
     pub pick_queries: Option<u32>,
     #[arg(long, alias = "all-paths", alias = "query-all")]
     pub query_all_paths: bool,
+    #[arg(long)]
+    pub create: bool,
 
     // Path to the project root
     pub path: PathBuf,

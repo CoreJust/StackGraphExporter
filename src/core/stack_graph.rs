@@ -1,6 +1,6 @@
 pub type SGNodeIndex = u32;
-pub type SGSymbolIndex = usize;
-pub type SGFileIndex = usize;
+pub type SGSymbolIndex = u32;
+pub type SGFileIndex = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SGSymbol {

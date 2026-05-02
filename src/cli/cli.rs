@@ -20,11 +20,13 @@ fn run_open(args: OpenArgs) -> Result<()> {
     let source = args.source.clone();
     let pick_queries = args.pick_queries.clone();
     let query_all_paths = args.query_all_paths;
+    let create = args.create;
     let immediates_count: u32 = [
         symbol.is_some(),
         source.is_some(),
         pick_queries.is_some(),
         query_all_paths,
+        create,
     ]
     .iter()
     .map(|&some| if some { 1 } else { 0 })
@@ -65,6 +67,8 @@ fn run_open(args: OpenArgs) -> Result<()> {
     } else if query_all_paths {
         commands.push(Command::Create { artifact: None });
         commands.push(Command::QueryAll);
+    } else if create {
+        commands.push(Command::Create { artifact: None });
     }
 
     for cmd in commands {

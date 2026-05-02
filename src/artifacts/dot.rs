@@ -81,7 +81,7 @@ fn id_to_str(id: &SGNodeId, files: &Vec<String>) -> String {
         "{}:{}",
         id.file
             .as_ref()
-            .and_then(|x| Some(files[*x].as_str()))
+            .and_then(|x| Some(files[*x as usize].as_str()))
             .unwrap_or_else(|| "<global>"),
         id.local_id
     )
@@ -111,20 +111,22 @@ fn make_node_name(
             }
         }
         SGNode::Root => "root".to_string(),
-        SGNode::Push(symbol) => format!("push {}", symbol_to_str(&symbols[*symbol])),
-        SGNode::Pop(symbol) => format!("pop {}", symbol_to_str(&symbols[*symbol])),
+        SGNode::Push(symbol) => format!("push {}", symbol_to_str(&symbols[*symbol as usize])),
+        SGNode::Pop(symbol) => format!("pop {}", symbol_to_str(&symbols[*symbol as usize])),
         SGNode::JumpTo => "jump_to".to_string(),
         SGNode::PushScoped(symbol, scope) => format!(
             "push_scoped {} at {}",
-            symbol_to_str(&symbols[*symbol]),
+            symbol_to_str(&symbols[*symbol as usize]),
             id_to_str(&ids[*scope as usize], files)
         ),
         SGNode::PushScopedUnresolved(symbol, scope_raw) => format!(
             "push_scoped {} at {}",
-            symbol_to_str(&symbols[*symbol]),
+            symbol_to_str(&symbols[*symbol as usize]),
             id_to_str(&scope_raw, files)
         ),
-        SGNode::PopScoped(symbol) => format!("pop_scoped {}", symbol_to_str(&symbols[*symbol])),
+        SGNode::PopScoped(symbol) => {
+            format!("pop_scoped {}", symbol_to_str(&symbols[*symbol as usize]))
+        }
         SGNode::DropScopes => "drop_scopes".to_string(),
     }
 }

@@ -174,7 +174,7 @@ where
         files: transient_graph.files,
         potentially_virtual_rules: transient_graph.potentially_virtual_rules,
         sg_to_cfl_rule_index: transient_graph.sg_to_cfl_rule_index,
-        sg_unique_symbols_count: transient_graph.sg_unique_symbols_count,
+        cfl_push_pop_rules_count: transient_graph.cfl_push_pop_rules_count,
     };
 
     progress_monitor.emit(|e| ProgressEvent::Done(e))?;

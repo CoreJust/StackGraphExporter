@@ -1,7 +1,7 @@
 use crate::{
     cli::{
+        artifact_type::ArtifactType,
         command_processor::{Command, CommandProcessor},
-        engine::ArtifactType,
     },
     error::{Error, Result},
     io::read_line,
@@ -30,7 +30,7 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                 let artifact = if parts.len() == 1 {
                     None
                 } else {
-                    match parse_artifact(parts[1]) {
+                    match ArtifactType::parse(parts[1]) {
                         Some(artifact) => Some(artifact),
                         None => {
                             return Err(Error::InvalidArgument(format!(
@@ -52,7 +52,7 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                 let artifact = if parts.len() == 1 {
                     None
                 } else {
-                    match parse_artifact(parts[1]) {
+                    match ArtifactType::parse(parts[1]) {
                         Some(artifact) => Some(artifact),
                         None => {
                             return Err(Error::InvalidArgument(format!(
@@ -115,7 +115,7 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                 } else {
                     let artifact_str = parts[1];
                     let path = std::path::PathBuf::from(parts[2]);
-                    match parse_artifact(artifact_str) {
+                    match ArtifactType::parse(artifact_str) {
                         Some(artifact) => {
                             if let Err(e) = processor.process(Command::Output {
                                 artifact: Some(artifact),
@@ -146,18 +146,4 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn parse_artifact(s: &str) -> Option<ArtifactType> {
-    match s {
-        "cfg" => Some(ArtifactType::Cfg),
-        "csv" => Some(ArtifactType::Csv),
-        "dot" => Some(ArtifactType::Dot),
-        "dot-ucfs" => Some(ArtifactType::DotUcfs),
-        "kt" => Some(ArtifactType::Kt),
-        "json" => Some(ArtifactType::Json),
-        "g" => Some(ArtifactType::G),
-        "cnf" => Some(ArtifactType::Cnf),
-        _ => None,
-    }
 }

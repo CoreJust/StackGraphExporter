@@ -9,8 +9,8 @@ use crate::{
 
 // Idea:
 // There may be nodes that have no incoming or outcoming
-// edges. If it's virtual or push with not outcoming
-// or pop with no incoming - no valid paths can exist
+// edges. If it's virtual or push without outcoming
+// or pop without incoming - no valid paths can exist
 // with this node.
 pub fn remove_invalid_end_nodes<F>(
     tgraph: &mut TGraph,

@@ -7,6 +7,30 @@ pub enum CFLDisplaySymbol {
     Epsilon,
     Pop(CFLRuleIndex),
     Push(CFLRuleIndex),
+    VPop(CFLRuleIndex),
+    VPush(CFLRuleIndex),
+}
+
+impl CFLDisplaySymbol {
+    pub fn short_name(&self) -> &'static str {
+        match self {
+            Self::Epsilon => "eps",
+            Self::Pop(_) => "pp_i",
+            Self::Push(_) => "psh_i",
+            Self::VPop(_) => "vpp_i",
+            Self::VPush(_) => "vpsh_i",
+        }
+    }
+
+    pub fn rule(&self) -> Option<CFLRuleIndex> {
+        match self {
+            Self::Epsilon => None,
+            Self::Pop(r) => Some(*r),
+            Self::Push(r) => Some(*r),
+            Self::VPop(r) => Some(*r),
+            Self::VPush(r) => Some(*r),
+        }
+    }
 }
 
 impl Display for CFLDisplaySymbol {
@@ -21,6 +45,8 @@ impl Display for CFLDisplaySymbol {
             Self::Push(index) => {
                 write!(f, "psh{index}")?;
             }
+            Self::VPop(_) => panic!(),
+            Self::VPush(_) => panic!(),
         }
         Ok(())
     }

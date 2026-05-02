@@ -5,6 +5,7 @@ pub struct SimplificationStats {
     pub iterations: usize,
     pub total_nodes_removed: usize,
     pub total_edges_removed: usize,
+    pub total_rules_removed: usize,
     pub invalid_pairs_removed: usize,
     pub invalid_end_nodes_removed: usize,
     pub trivial_eps_removed: usize,
@@ -35,7 +36,7 @@ impl Display for SimplificationStats {
             f,
             "
 \tIterations: {}
-\tTotal removed: {} nodes and {} edges
+\tTotal removed: {} nodes, {} edges, and {} rules
 \tInvalid pairs removed: {}
 \tInvalid end nodes removed: {}
 \tTrivial eps removed: {} (over {} iterations in total)
@@ -44,6 +45,7 @@ impl Display for SimplificationStats {
             self.iterations,
             self.total_nodes_removed,
             self.total_edges_removed,
+            self.total_rules_removed,
             self.invalid_pairs_removed,
             self.invalid_end_nodes_removed,
             self.trivial_eps_removed,

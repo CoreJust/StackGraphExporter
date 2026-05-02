@@ -523,19 +523,18 @@ impl Engine {
             }
             ArtifactType::G => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromLabelTo)?;
+                cfl.write_to_g_file(&path, GOrder::FromLabelTo, false)?;
             }
             ArtifactType::GCfg => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromToLabel)?;
+                cfl.write_to_g_file(&path, GOrder::FromToLabel, true)?;
             }
             ArtifactType::Cnf => {
                 let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_cnf_file(&path)?;
             }
             ArtifactType::CnfCfg => {
-                let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_cnf_cfg_file(&path)?;
+                write_to_cnf_cfg_file(&path)?;
             }
         }
         Ok(path)

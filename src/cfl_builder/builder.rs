@@ -26,21 +26,15 @@ where
 {
     let mut out_indices = HashMap::new();
     progress.stage_total = src_nodes.len();
-    let sink_node = src_nodes.len() as CFLNodeIndex; // If there'are no outcoming edges
-    let mut out_node_idx = src_nodes.len() as CFLNodeIndex + 1; // If there're multiple outcoming edges
+    let mut out_node_idx = src_nodes.len() as CFLNodeIndex;
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingOutIds(v))?;
         if src_node.symbol.is_some() && src_node.outcoming.len() != 1 {
-            out_indices.insert(
-                i as TNodeIndex,
-                if src_node.outcoming.is_empty() {
-                    sink_node
-                } else {
-                    let new_idx = out_node_idx;
-                    out_node_idx += 1;
-                    new_idx
-                },
-            );
+            out_indices.insert(i as TNodeIndex, {
+                let new_idx = out_node_idx;
+                out_node_idx += 1;
+                new_idx
+            });
         }
     }
     Ok(out_indices)

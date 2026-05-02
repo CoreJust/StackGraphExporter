@@ -14,5 +14,5 @@ pub use dot::ToDOT;
 pub use g::{GOrder, ToG};
 pub use grammar_cfg::ToCFGGrammar;
 pub use grammar_cnf::ToCNFGrammar;
-pub use grammar_cnf_cfg::ToCNFCFGGrammar;
+pub use grammar_cnf_cfg::write_to_cnf_cfg_file;
 pub use grammar_kt::ToKTGrammar;

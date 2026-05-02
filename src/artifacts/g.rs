@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::artifacts::cfl_display_symbol::CFLDisplaySymbol;
@@ -11,23 +10,43 @@ pub enum GOrder {
 }
 
 pub trait ToG {
-    type Node: Display + Ord;
-    type Edge: Display + Ord;
+    fn to_g_lines(
+        self: &Self,
+        index_rules: bool,
+    ) -> Vec<(CFLNodeIndex, CFLDisplaySymbol, CFLNodeIndex)>;
 
-    fn to_g_lines(self: &Self) -> Vec<(Self::Node, Self::Edge, Self::Node)>;
-
-    fn write_to_g_file(self: &Self, out_path: &PathBuf, order: GOrder) -> Result<()> {
+    fn write_to_g_file(
+        self: &Self,
+        out_path: &PathBuf,
+        order: GOrder,
+        index_rules: bool,
+    ) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 
+        if index_rules {
+            assert!(matches!(order, GOrder::FromToLabel));
+        }
+
         let mut out_file = File::create(&out_path)?;
-        let mut g_lines = self.to_g_lines();
+        let mut g_lines = self.to_g_lines(index_rules);
         g_lines.sort();
 
         for (from, label, to) in g_lines {
             match order {
                 GOrder::FromLabelTo => writeln!(out_file, "{from} {label} {to}"),
-                GOrder::FromToLabel => writeln!(out_file, "{from} {to} {label}"),
+                GOrder::FromToLabel => {
+                    if index_rules && label.rule().is_some() {
+                        writeln!(
+                            out_file,
+                            "{from} {to} {} {}",
+                            label.short_name(),
+                            label.rule().unwrap(),
+                        )
+                    } else {
+                        writeln!(out_file, "{from} {to} {label}")
+                    }
+                }
             }?;
         }
         Ok(())
@@ -35,10 +54,10 @@ pub trait ToG {
 }
 
 impl<'a> ToG for CFLGraph {
-    type Node = CFLNodeIndex;
-    type Edge = CFLDisplaySymbol;
-
-    fn to_g_lines(self: &Self) -> Vec<(Self::Node, Self::Edge, Self::Node)> {
+    fn to_g_lines(
+        self: &Self,
+        index_rules: bool,
+    ) -> Vec<(CFLNodeIndex, CFLDisplaySymbol, CFLNodeIndex)> {
         self.edges
             .iter()
             .map(|e| {
@@ -47,10 +66,19 @@ impl<'a> ToG for CFLGraph {
                     match e.symbol {
                         None => CFLDisplaySymbol::Epsilon,
                         Some(index) => {
-                            if index % 2 == 0 {
-                                CFLDisplaySymbol::Push(index / 2)
+                            let rule = index / 2;
+                            if index_rules && self.potentially_virtual_rules.contains(&rule) {
+                                if index % 2 == 0 {
+                                    CFLDisplaySymbol::VPush(rule)
+                                } else {
+                                    CFLDisplaySymbol::VPop(rule)
+                                }
                             } else {
-                                CFLDisplaySymbol::Pop(index / 2)
+                                if index % 2 == 0 {
+                                    CFLDisplaySymbol::Push(rule)
+                                } else {
+                                    CFLDisplaySymbol::Pop(rule)
+                                }
                             }
                         }
                     },

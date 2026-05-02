@@ -7,6 +7,7 @@ pub enum ArtifactType {
     Kt,
     Json,
     G,
+    GCfg,
     Cnf,
     CnfCfg,
 }
@@ -21,6 +22,7 @@ impl ArtifactType {
             "kt" => Some(ArtifactType::Kt),
             "json" => Some(ArtifactType::Json),
             "g" => Some(ArtifactType::G),
+            "g_cfg" | "g-cfg" => Some(ArtifactType::GCfg),
             "cnf" => Some(ArtifactType::Cnf),
             "cnf_cfg" | "cnf-cfg" => Some(ArtifactType::CnfCfg),
             _ => None,
@@ -36,6 +38,7 @@ impl ArtifactType {
             ArtifactType::Kt => "UCFSGrammar.kt",
             ArtifactType::Json => "stackgraph.json",
             ArtifactType::G => "cfl.g",
+            ArtifactType::GCfg => "cfl.cfg.g",
             ArtifactType::Cnf => "cfl_grammar.cnf",
             ArtifactType::CnfCfg => "cfl_grammar.cfg.cnf",
         }

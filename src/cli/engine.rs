@@ -38,6 +38,7 @@ pub struct Engine {
     pub gen_kt: bool,
     pub gen_json: bool,
     pub gen_g: bool,
+    pub gen_g_cfg: bool,
     pub gen_cnf: bool,
     pub gen_cnf_cfg: bool,
     pub output_dir: PathBuf,
@@ -81,6 +82,9 @@ impl Engine {
         if let Some(p) = args.output_g {
             overrides.insert(ArtifactType::G, p);
         }
+        if let Some(p) = args.output_g_cfg {
+            overrides.insert(ArtifactType::GCfg, p);
+        }
         if let Some(p) = args.output_cnf {
             overrides.insert(ArtifactType::Cnf, p);
         }
@@ -115,6 +119,7 @@ impl Engine {
             gen_kt: args.kt,
             gen_json: args.stack_graph_json,
             gen_g: args.g,
+            gen_g_cfg: args.g_cfg,
             gen_cnf: args.cnf,
             gen_cnf_cfg: args.cnf_cfg,
             output_dir,
@@ -607,7 +612,11 @@ impl Engine {
             }
             ArtifactType::G => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path)?;
+                cfl.write_to_g_file(&path, GOrder::FromLabelTo)?;
+            }
+            ArtifactType::GCfg => {
+                let cfl = self.ensure_cfl_graph()?;
+                cfl.write_to_g_file(&path, GOrder::FromToLabel)?;
             }
             ArtifactType::Cnf => {
                 let cfl = self.ensure_cfl_graph()?;
@@ -630,6 +639,7 @@ impl Engine {
             (self.gen_kt, ArtifactType::Kt),
             (self.gen_json, ArtifactType::Json),
             (self.gen_g, ArtifactType::G),
+            (self.gen_g_cfg, ArtifactType::GCfg),
             (self.gen_cnf, ArtifactType::Cnf),
             (self.gen_cnf_cfg, ArtifactType::CnfCfg),
         ];

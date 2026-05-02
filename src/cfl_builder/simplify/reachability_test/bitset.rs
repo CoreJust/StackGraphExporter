@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use fixedbitset::FixedBitSet;
 use roaring::RoaringBitmap;
 
@@ -147,6 +149,9 @@ impl BitSetFixed {
     }
 }
 
+type UnionFn = unsafe fn(&mut [usize], &[usize]) -> bool;
+static UNION_FN: OnceLock<UnionFn> = OnceLock::new();
+
 impl BitSet for BitSetFixed {
     fn empty(size: u32) -> Self {
         Self {
@@ -169,18 +174,14 @@ impl BitSet for BitSetFixed {
     #[inline]
     fn unite_with(&mut self, other: &Self) -> bool {
         assert!(self.data.len() == other.data.len());
-
-        let dst = self.data.as_mut_slice();
-        let src = other.data.as_slice();
-
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            if std::is_x86_feature_detected!("avx2") && dst.len() >= 32 {
-                return Self::unite_with_avx2(dst, src);
+        let f = UNION_FN.get_or_init(|| {
+            #[cfg(target_arch = "x86_64")]
+            if std::is_x86_feature_detected!("avx2") {
+                return Self::unite_with_avx2 as UnionFn;
             }
-        }
-
-        Self::unite_with_scalar(dst, src)
+            Self::unite_with_scalar as UnionFn
+        });
+        unsafe { f(self.data.as_mut_slice(), other.data.as_slice()) }
     }
 
     fn contains(&self, bit: u32) -> bool {

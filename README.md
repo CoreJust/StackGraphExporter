@@ -112,7 +112,9 @@ SPPF enables output in the format of SPPF. KotGLL path is required to be provide
       --kt
       --stack-graph-json or --sg-json
       --g
+      --g-cfg
       --cnf
+      --cnf-cfg
 ```
 
 Enable generation of corresponding artifacts (those not marked with `stack-graph` or `sg` are for CFL).
@@ -129,7 +131,9 @@ Note that the artifacts are not generated automatically, you need to either run 
       --output-kt <OUTPUT_KT>
       --output-stack-graph-json or --output-sg-json <OUTPUT_STACK_GRAPH_JSON>
       --output-g <OUTPUT_G>
+      --output-g-cfg <OUTPUT_G_CFG>
       --output-cnf <OUTPUT_CNF>
+      --output-cnf-cfg <OUTPUT_CNF_CFG>
 ```
 
 `-o, --output` sets directory for all the artifacts, others override paths for specific artifacts. By default, directory for all the artifacts is set to `./`.

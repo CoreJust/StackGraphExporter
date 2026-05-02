@@ -101,7 +101,9 @@ impl CommandProcessor {
                 self.engine.gen_kt = true;
             }
             "g" => self.engine.gen_g = true,
+            "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = true,
             "cnf" => self.engine.gen_cnf = true,
+            "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = true,
             "verify" => self.engine.verify = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
             "simplify" => self.engine.simplification_options.simplify = true,
@@ -133,7 +135,9 @@ impl CommandProcessor {
                 self.engine.gen_kt = false;
             }
             "g" => self.engine.gen_g = false,
+            "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = false,
             "cnf" => self.engine.gen_cnf = false,
+            "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = false,
             "verify" => self.engine.verify = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
             "simplify" => self.engine.simplification_options.simplify = false,

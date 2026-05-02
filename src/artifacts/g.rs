@@ -5,13 +5,18 @@ use crate::artifacts::cfl_display_symbol::CFLDisplaySymbol;
 use crate::core::{CFLGraph, CFLNodeIndex};
 use crate::error::Result;
 
+pub enum GOrder {
+    FromLabelTo,
+    FromToLabel,
+}
+
 pub trait ToG {
     type Node: Display + Ord;
     type Edge: Display + Ord;
 
     fn to_g_lines(self: &Self) -> Vec<(Self::Node, Self::Edge, Self::Node)>;
 
-    fn write_to_g_file(self: &Self, out_path: &PathBuf) -> Result<()> {
+    fn write_to_g_file(self: &Self, out_path: &PathBuf, order: GOrder) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
 
@@ -20,7 +25,10 @@ pub trait ToG {
         g_lines.sort();
 
         for (from, label, to) in g_lines {
-            writeln!(out_file, "{from} {label} {to}")?;
+            match order {
+                GOrder::FromLabelTo => writeln!(out_file, "{from} {label} {to}"),
+                GOrder::FromToLabel => writeln!(out_file, "{from} {to} {label}"),
+            }?;
         }
         Ok(())
     }

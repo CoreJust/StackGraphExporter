@@ -11,7 +11,7 @@ mod progress_event;
 
 pub use csv::ToCSV;
 pub use dot::ToDOT;
-pub use g::ToG;
+pub use g::{GOrder, ToG};
 pub use grammar_cfg::ToCFGGrammar;
 pub use grammar_cnf::ToCNFGrammar;
 pub use grammar_cnf_cfg::ToCNFCFGGrammar;

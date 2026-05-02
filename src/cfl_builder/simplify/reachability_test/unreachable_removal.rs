@@ -85,9 +85,11 @@ where
     progress.set_total(tgraph.nodes.len());
     let mut processed_originals = 0usize;
 
+    let mut openings = Vec::new();
+    let mut closings = Vec::new();
     for (scc_idx, members) in mapping_back.iter().enumerate() {
-        let mut openings = Vec::new();
-        let mut closings = Vec::new();
+        openings.clear();
+        closings.clear();
         for &orig_node in members {
             processed_originals += 1;
             progress.tick(

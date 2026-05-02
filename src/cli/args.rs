@@ -87,6 +87,8 @@ pub struct OpenArgs {
     #[arg(long)]
     pub g: bool,
     #[arg(long)]
+    pub g_cfg: bool,
+    #[arg(long)]
     pub cnf: bool,
     #[arg(long)]
     pub cnf_cfg: bool,
@@ -108,6 +110,8 @@ pub struct OpenArgs {
     pub output_stack_graph_json: Option<PathBuf>,
     #[arg(long)]
     pub output_g: Option<PathBuf>,
+    #[arg(long)]
+    pub output_g_cfg: Option<PathBuf>,
     #[arg(long)]
     pub output_cnf: Option<PathBuf>,
     #[arg(long)]

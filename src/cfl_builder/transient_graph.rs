@@ -12,6 +12,8 @@ pub type TNodeIndex = u32;
 pub struct TNode {
     pub symbol: Option<CFLSymbolIndex>,
     pub metadata: Option<CFLNodeMetadata>,
+
+    // No self-loops are allowed
     pub incoming: Vec<TNodeIndex>,
     pub outcoming: Vec<TNodeIndex>,
 }

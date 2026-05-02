@@ -39,6 +39,9 @@ where
 
         while let Some(&mut (v, ref mut i)) = dfs_stack.last_mut() {
             let edges = &tgraph.nodes[v].outcoming;
+            if edges.len() == 0 {
+                continue;
+            }
 
             if *i == 0 {
                 indices[v] = Some(index_counter);
@@ -124,23 +127,36 @@ where
         });
         Ok(())
     })?;
+
+    let mut buf = Vec::new();
     for (condensed_node_idx, original_nodes) in mapping_back.iter().enumerate() {
-        result.nodes[condensed_node_idx].incoming = original_nodes
-            .iter()
-            .flat_map(|&n| tgraph.nodes[n as usize].incoming.iter().copied())
-            .map(|n| mapping[n as usize])
-            .filter(|&n| n != condensed_node_idx as TNodeIndex)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-        result.nodes[condensed_node_idx].outcoming = original_nodes
-            .iter()
-            .flat_map(|&n| tgraph.nodes[n as usize].outcoming.iter().copied())
-            .map(|n| mapping[n as usize])
-            .filter(|&n| n != condensed_node_idx as TNodeIndex)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
+        buf.clear();
+        for &orig in original_nodes {
+            buf.extend(
+                tgraph.nodes[orig as usize]
+                    .incoming
+                    .iter()
+                    .map(|&n| mapping[n as usize])
+                    .filter(|&n| n != condensed_node_idx as TNodeIndex),
+            );
+        }
+        buf.sort_unstable();
+        buf.dedup();
+        result.nodes[condensed_node_idx].incoming = std::mem::take(&mut buf);
+
+        buf.clear();
+        for &orig in original_nodes {
+            buf.extend(
+                tgraph.nodes[orig as usize]
+                    .outcoming
+                    .iter()
+                    .map(|&n| mapping[n as usize])
+                    .filter(|&n| n != condensed_node_idx as TNodeIndex),
+            );
+        }
+        buf.sort_unstable();
+        buf.dedup();
+        result.nodes[condensed_node_idx].outcoming = std::mem::take(&mut buf);
     }
     let max = mapping_back.iter().max_by_key(|m| m.len()).unwrap().len();
     let max_pos = mapping_back.iter().position(|m| m.len() == max).unwrap();

@@ -104,17 +104,10 @@ impl CommandProcessor {
             "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = true,
             "cnf" => self.engine.gen_cnf = true,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = true,
-            "verify" => self.engine.verify = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
             "simplify" => self.engine.simplification_options.simplify = true,
-            "simplify-cfl" | "simplify_cfl" => {
-                self.engine.simplification_options.simplify_cfl = true
-            }
-            "no-simplify-cfl" | "no_simplify_cfl" => {
-                self.engine.simplification_options.simplify_cfl = false
-            }
             _ => {
-                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl");
+                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, all-symbols, simplify, g, g-cfg, cnf, cnf-cfg");
                 return Ok(());
             }
         }
@@ -138,17 +131,10 @@ impl CommandProcessor {
             "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = false,
             "cnf" => self.engine.gen_cnf = false,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = false,
-            "verify" => self.engine.verify = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
             "simplify" => self.engine.simplification_options.simplify = false,
-            "simplify-cfl" | "simplify_cfl" => {
-                self.engine.simplification_options.simplify_cfl = false
-            }
-            "no-simplify-cfl" | "no_simplify_cfl" => {
-                self.engine.simplification_options.simplify_cfl = true
-            }
             _ => {
-                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, verify, all-symbols, simplify-cfl", feature);
+                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, all-symbols, simplify, g, g-cfg, cnf, cnf-cfg", feature);
                 return Ok(());
             }
         }
@@ -417,7 +403,6 @@ impl CommandProcessor {
         crate::info!("Current configuration:");
         crate::info!("  KotGLL enabled: {}", self.engine.kotgll_enabled);
         crate::info!("  UCFS enabled: {}", self.engine.ucfs_enabled);
-        crate::info!("  Verify: {}", self.engine.verify);
         crate::info!("  All symbols: {}", self.engine.all_symbols);
         crate::info!(
             "  Simplify CFL:\n\t{:?};\n  Already simplified?\n\t{:?})",

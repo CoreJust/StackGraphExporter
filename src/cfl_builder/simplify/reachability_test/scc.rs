@@ -39,9 +39,6 @@ where
 
         while let Some(&mut (v, ref mut i)) = dfs_stack.last_mut() {
             let edges = &tgraph.nodes[v].outcoming;
-            if edges.len() == 0 {
-                continue;
-            }
 
             if *i == 0 {
                 indices[v] = Some(index_counter);
@@ -86,7 +83,13 @@ where
                         break;
                     }
                 }
-                callback(scc)?;
+                if !(scc.len() == 1
+                    && tgraph.nodes[scc[0] as usize].incoming.is_empty()
+                    && tgraph.nodes[scc[0] as usize].outcoming.is_empty())
+                // Skip isolated nodes
+                {
+                    callback(scc)?;
+                }
             }
             progress.emit_simplification_nth("Computing SCCs", completed_nodes)?;
         }

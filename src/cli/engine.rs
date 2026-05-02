@@ -25,7 +25,6 @@ pub struct Engine {
     pub remove_unsupported: bool,
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
-    pub verify: bool,
     pub all_symbols: bool,
     pub simplification_options: SimplificationOptions,
     pub used_simplification_options: SimplificationOptions,
@@ -48,12 +47,11 @@ pub struct Engine {
     pub stats: Stats,
     context: Option<StackGraphContext>,
     cfl_graph: Option<CFLGraph>,
-    cfl_pop_map: Option<HashMap<SGNodeIndex, CFLNodeIndex>>,
     nodes_with_partials: HashSet<SGNodeIndex>,
 }
 
 impl Engine {
-    pub fn new(args: crate::cli::args::OpenArgs) -> Self {
+    pub fn new(args: crate::cli::args::OpenArgs) -> Result<Self> {
         let language = if args.python {
             Language::Python
         } else {
@@ -92,24 +90,23 @@ impl Engine {
             overrides.insert(ArtifactType::CnfCfg, p);
         }
 
-        Self {
+        Ok(Self {
             stack_graph: None,
             remove_unsupported: args.remove_unsupported,
             language,
             kotgll_enabled: args.kotgll,
             ucfs_enabled: args.ucfs,
-            verify: args.verify,
             all_symbols: args.all_symbols,
             simplification_options: SimplificationOptions::make(
                 args.simplify,
-                args.no_simplify_cfl,
                 args.no_simplify_transient,
                 args.max_transient_simplification_iterations,
                 args.eps_removal_tolerance,
                 args.remove_unreachable_trivial,
                 args.remove_unreachable,
                 args.remove_unreachable_with_front,
-            ),
+                args.remove_unreachable_deep,
+            )?,
             sppf: args.sppf,
             verbose: args.verbose,
             gen_cfg: args.cfg,
@@ -131,10 +128,9 @@ impl Engine {
             },
             context: None,
             cfl_graph: None,
-            cfl_pop_map: None,
             used_simplification_options: SimplificationOptions::no_simpify(),
             nodes_with_partials: HashSet::new(),
-        }
+        })
     }
 
     fn clean_unsupported_features(&mut self, path: &Path) -> Result<()> {
@@ -189,10 +185,10 @@ impl Engine {
             }
             Ok(self.cfl_graph.as_ref().unwrap())
         } else {
-            (self.cfl_graph, self.cfl_pop_map) = {
+            self.cfl_graph = {
                 let ctx = self.ensure_context()?;
                 let mut renderer = ProgressRenderer::new();
-                let (graph, pop_map, built_in) =
+                let (graph, built_in) =
                     convert_to_cfl(&ctx.sggraph, &simplify, |e| renderer.render(&e))?;
                 let vertices_count = graph
                     .edges
@@ -214,7 +210,7 @@ impl Engine {
                 cfl_stats.vertices = vertices_count as usize;
                 cfl_stats.edges = graph.edges.len();
                 self.stats.cfl_grammar.rules = graph.cfl_push_pop_rules_count * 2 + 1;
-                (Some(graph), Some(pop_map))
+                Some(graph)
             };
             self.used_simplification_options = simplify;
             Ok(self.cfl_graph.as_ref().unwrap())
@@ -423,7 +419,7 @@ impl Engine {
             self.generate_artifact(ArtifactType::Csv, true)?;
         }
         let mut renderer = ProgressRenderer::new();
-        let kotgll_defs = kotgll_query(
+        kotgll_query(
             self.kotgll_path
                 .as_ref()
                 .expect("No KotGLL path was provided; add --kotgll-path with path to JAR"),
@@ -434,92 +430,7 @@ impl Engine {
             self.sppf,
             |e| renderer.render(&e),
         )?;
-        if self.verify {
-            let mut renderer = ProgressRenderer::new();
-            // TODO: pass references already acquired in the command_processor here
-            let refs = self
-                .ensure_context()?
-                .find_reference_nodes(Some(symbol), |e| renderer.render(&e))?;
-            let mut stack_defs = HashSet::new();
-            for r in refs {
-                let mut renderer = ProgressRenderer::new();
-                let def_indices = self
-                    .ensure_context()?
-                    .resolve_reference(r, |e| renderer.render(&e))?
-                    .defs
-                    .into_iter()
-                    .map(|d| d.sg_node_index)
-                    .collect::<Vec<_>>();
-                for sg_index in def_indices {
-                    if let Some(cfl_idx) = self.cfl_pop_map.as_ref().and_then(|m| m.get(&sg_index))
-                    {
-                        stack_defs.insert(*cfl_idx);
-                    }
-                }
-            }
-            let cfl_defs: HashSet<_> = kotgll_defs.iter().map(|p| p.to).collect();
-            if stack_defs == cfl_defs {
-                crate::info!(
-                    "Received same results from KotGLL and StackGraph: {} definitions found",
-                    stack_defs.len()
-                );
-                if self.verbose {
-                    for cfl_idx in &stack_defs {
-                        crate::info!("  definition {}", self.node_metadata_as_str(*cfl_idx));
-                    }
-                }
-            } else {
-                crate::error!("Results for KotGLL and StackGraph differ");
-                let missing: Vec<_> = stack_defs.difference(&cfl_defs).collect();
-                let extra: Vec<_> = cfl_defs.difference(&stack_defs).collect();
-                if !missing.is_empty() {
-                    crate::info!("Missing in KotGLL ({}):", missing.len());
-                    for cfl_idx in missing {
-                        crate::warn!("  {}", self.node_metadata_as_str(*cfl_idx));
-                    }
-                }
-                if !extra.is_empty() {
-                    crate::warn!("Extra in KotGLL ({}):", extra.len());
-                    for cfl_idx in extra {
-                        crate::warn!("  {}", self.node_metadata_as_str(*cfl_idx));
-                    }
-                }
-            }
-            self.stats.partial_database_built_in = self
-                .ensure_context()?
-                .database_built_in
-                .unwrap_or(Duration::ZERO)
-                .as_millis() as u64;
-        }
         Ok(())
-    }
-
-    fn node_metadata_as_str(&self, cfl_idx: CFLNodeIndex) -> String {
-        if let Some(meta) = self
-            .cfl_graph
-            .as_ref()
-            .and_then(|g| g.metadata.get(&cfl_idx))
-        {
-            let file_str = meta
-                .file
-                .and_then(|f| {
-                    self.cfl_graph
-                        .as_ref()
-                        .and_then(|g| g.files.get(f as usize))
-                })
-                .map(String::as_str)
-                .unwrap_or("");
-            format!(
-                " {} at {}:{} ({}node {})",
-                meta.name,
-                file_str,
-                meta.line.unwrap_or(0) + 1,
-                if meta.is_real { "" } else { "virtual " },
-                cfl_idx,
-            )
-        } else {
-            format!("  node {} (no metadata)", cfl_idx)
-        }
     }
 
     pub fn generate_ucfs_query(

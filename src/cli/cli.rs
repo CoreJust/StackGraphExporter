@@ -37,7 +37,7 @@ fn run_open(args: OpenArgs) -> Result<()> {
 
     let path = args.path.clone();
 
-    let engine = Engine::new(args);
+    let engine = Engine::new(args)?;
     let mut processor = CommandProcessor::new(engine);
 
     let mut commands = vec![Command::Open { path }];

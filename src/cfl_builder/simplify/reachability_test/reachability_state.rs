@@ -18,6 +18,7 @@ pub trait ReachabilityState: Send {
     fn unreachable_if_opposite(&self, opposite: &Self) -> bool;
 }
 
+#[derive(Clone)]
 pub struct TrivialReachabilityState {
     state: bool,
 }
@@ -57,6 +58,7 @@ impl ReachabilityState for TrivialReachabilityState {
     }
 }
 
+#[derive(Clone)]
 pub struct SingleReachabilityState<T: BitSet> {
     state: T,
 }
@@ -97,6 +99,7 @@ impl<T: BitSet> ReachabilityState for SingleReachabilityState<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct DoubleReachabilityState<T: BitSet> {
     state: T,
     front: T, // Openings that can reach here immediately, solely by epsilon nodes
@@ -159,6 +162,160 @@ impl<T: BitSet> ReachabilityState for DoubleReachabilityState<T> {
             let changed_front = self.front.unite_with(&invader.front);
             changed_state || changed_front
         }
+    }
+
+    fn unreachable_if_opposite(&self, opposite: &Self) -> bool {
+        self.state.is_disjoint(&opposite.state)
+    }
+}
+
+// The following is currently experimental
+pub struct KReachabilityState<T: BitSet, const K: usize> {
+    size: u32,
+    state: T,
+    fronts: Vec<T>, // len = K - 1
+    opening: Option<CFLRuleIndex>,
+    closing: Option<CFLRuleIndex>,
+}
+
+impl<T: BitSet, const K: usize> KReachabilityState<T, K> {
+    #[inline]
+    fn front_depth() -> usize {
+        K.saturating_sub(1)
+    }
+
+    #[inline]
+    fn empty_fronts(size: u32) -> Vec<T> {
+        (0..Self::front_depth()).map(|_| T::empty(size)).collect()
+    }
+
+    #[inline]
+    fn singleton(size: u32, bit: CFLRuleIndex) -> T {
+        T::with_bits_set(size, &[bit])
+    }
+}
+
+impl<T: BitSet, const K: usize> ReachabilityState for KReachabilityState<T, K> {
+    const MONOTONOUS: bool = false;
+
+    fn empty(size: u32) -> Self {
+        Self {
+            size,
+            state: T::empty(size),
+            fronts: Self::empty_fronts(size),
+            opening: None,
+            closing: None,
+        }
+    }
+
+    fn from_opening(size: u32, opening: CFLRuleIndex) -> Self {
+        let mut fronts = Self::empty_fronts(size);
+        if !fronts.is_empty() {
+            fronts[0] = Self::singleton(size, opening);
+        }
+
+        Self {
+            size,
+            state: Self::singleton(size, opening),
+            fronts,
+            opening: Some(opening),
+            closing: None,
+        }
+    }
+
+    fn from_closing(size: u32, closing: CFLRuleIndex) -> Self {
+        Self {
+            size,
+            state: T::empty(size),
+            fronts: Self::empty_fronts(size),
+            opening: None,
+            closing: Some(closing),
+        }
+    }
+
+    fn from_scc(_: u32, _: &[CFLRuleIndex], _: &[CFLRuleIndex]) -> Self {
+        panic!("KReachabilityState with K >= 2 does not use SCC condensation");
+    }
+
+    fn merge_with(&mut self, invader: &Self) -> bool {
+        let depth = Self::front_depth();
+
+        if depth == 0 {
+            // K = 1: exact Single semantics
+            return self.state.unite_with(&invader.state);
+        }
+
+        if depth == 1 {
+            // K = 2: exact Double semantics
+            let mut changed = false;
+
+            match (self.opening, self.closing) {
+                (Some(opening), None) => {
+                    changed |= self.state.unite_with(&invader.state);
+                    let opening_bit = Self::singleton(self.size, opening);
+                    changed |= self.fronts[0].unite_with(&opening_bit);
+                }
+                (None, Some(closing)) => {
+                    if invader.fronts[0].contains(closing) {
+                        changed |= self.state.unite_with(&invader.state);
+                        changed |= self.fronts[0].unite_with(&invader.state);
+                    }
+                }
+                (None, None) => {
+                    changed |= self.state.unite_with(&invader.state);
+                    changed |= self.fronts[0].unite_with(&invader.fronts[0]);
+                }
+                (Some(_), Some(_)) => unreachable!("A node cannot be both opening and closing"),
+            }
+
+            return changed;
+        }
+
+        // K >= 3: bounded frontier-stack semantics
+        let mut changed = false;
+
+        match (self.opening, self.closing) {
+            (Some(opening), None) => {
+                // Opening:
+                // - current frontier becomes this opening
+                // - previous frontier shifts one level deeper
+                // - deeper history shifts down
+                changed |= self.state.unite_with(&invader.state);
+
+                let opening_bit = Self::singleton(self.size, opening);
+                changed |= self.fronts[0].unite_with(&opening_bit);
+
+                for i in 1..depth {
+                    changed |= self.fronts[i].unite_with(&invader.fronts[i - 1]);
+                }
+            }
+
+            (None, Some(closing)) => {
+                // Closing:
+                // - only allowed if current frontier contains the matching symbol
+                // - then restore the previous frontier history
+                // - the deepest restored level falls back to `state`
+                if invader.fronts[0].contains(closing) {
+                    changed |= self.state.unite_with(&invader.state);
+
+                    for i in 0..(depth - 1) {
+                        changed |= self.fronts[i].unite_with(&invader.fronts[i + 1]);
+                    }
+                    changed |= self.fronts[depth - 1].unite_with(&invader.state);
+                }
+            }
+            (None, None) => {
+                // Ordinary / epsilon node: propagate everything unchanged
+                changed |= self.state.unite_with(&invader.state);
+                for i in 0..depth {
+                    changed |= self.fronts[i].unite_with(&invader.fronts[i]);
+                }
+            }
+
+            (Some(_), Some(_)) => unreachable!("A node cannot be both opening and closing"),
+        }
+
+        changed
     }
 
     fn unreachable_if_opposite(&self, opposite: &Self) -> bool {

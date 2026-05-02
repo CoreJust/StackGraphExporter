@@ -240,10 +240,9 @@ Enables simplification.
 
 ```
       --no-simplify-transient
-      --no-simplify-cfl
 ```
 
-Disable simplification on transient and CFL stages respectively.
+Disable simplification on transient stage.
 
 ```
       --max-[transient-]simplification-iterations or --max-[transient-]simplify-iterations <NUMBER>
@@ -261,9 +260,10 @@ Sets the maximum edges count difference from removing a single epsilon node duri
       --remove-unreachable-trivial
       --remove-unreachable
       --remove-unreachable-with-front or --with-front
+      --remove-unreachable-deep <DEPTH>
 ```
 
-Enables reachability test. *It can significantly affect performance*, especially the option with front.
+Enables reachability test. *It can significantly affect performance*, especially the option with front. For the deep option, DEPTH can be in range 1 to 8.
 
 See more about simplification heuristics below.
 
@@ -343,11 +343,11 @@ FOR EACH i {
 
 ## Simplification
 
-Currently there are several mechanisms of simplification. Most are done during the transient stage, where the graph is like CFL graph apart from still using labeled nodes instead of edges. There are:
+Currently there are several mechanisms of simplification. They are done during the transient stage, where the graph is like CFL graph apart from still using labeled nodes instead of edges. There are:
 
 1. *Invalid pairs removal*. If there is an edge from pushX to popY and X != Y, then no path can include such an edge and we can safely prune it.
 2. *Invalid end nodes removal*. An end node here is a node without incoming or outcoming edges. Thus, it can only be in the path start or end respectively. A path can not begin with a pop node or with a virtual node, and cannot end with a push node or a virtual node. Such nodes can be safely pruned.
 3. *Epsilon nodes removal*. The idea is that we can safely remove epsilon nodes as long as we reconnect all the incoming edges to all the nodes to which outcoming edges from this epsilon node existed. (e.g. if we have `A -> E, B -> E, E -> C, E -> D`, then we can remove `E` and get `A -> C, A -> D, B -> C, B -> D`). But we cannot just remove all the epsilon nodes (or well, we can, but the number of edges in the graph can go square). With each removal we prune `(incoming + outcoming)` edges, but create `(incoming * outcoming)` new ones. So if the difference is below some tolerance value, we do the removal.
 4. *Weakly connected components pruning*. If there is no such symbol X that a WCC contains at least one pair of real pushX and popX, then no paths can go through this component and we can safely prune it completely.
 5. *Reachability test*. The idea is to start a wave algorithm from push nodes forward and then separately from pop nodes backward. This way, all nodes are marked with what push nodes can theoretically reach them and what pop nodes can be theoretically reached from them. It doesn't account for the symbol stack, but still we can find and prune nodes with empty intersection between these 2 sets. The trivial version is a simplified one when we only check if any push and any pop are potentially reachable. It is the fastest one, but also produces the least results.
-6. *Reachability test with front*. A slightly advanced version of the previous test. We additionally mark what pushes / pops can potentially immediately reach / be reached (by immediately I mean on top of symbol stack).
+6. *Reachability test with front*. A slightly advanced version of the previous test. We additionally mark what pushes / pops can potentially immediately reach / be reached (by immediately I mean on top of symbol stack). A deep version is an even more advanced one where stack is emulated up to the given depth (note that increasing depth increases memory and performance requirements correspondingly but gives less effect with each next depth level).

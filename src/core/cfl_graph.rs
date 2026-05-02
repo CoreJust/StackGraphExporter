@@ -17,7 +17,9 @@ pub struct CFLEdge {
 #[derive(Debug, Clone)]
 pub struct CFLNodeMetadata {
     pub name: String,
+    #[allow(unused)]
     pub file: Option<CFLFileIndex>,
+    #[allow(unused)]
     pub line: Option<usize>,
     pub is_real: bool,
     pub sg_node_index: SGNodeIndex, // Original index from SGGraph
@@ -33,6 +35,7 @@ pub struct CFLPath {
 pub struct CFLGraph {
     pub edges: Vec<CFLEdge>,
     pub metadata: HashMap<CFLNodeIndex, CFLNodeMetadata>,
+    #[allow(unused)]
     pub files: Vec<String>,
     pub potentially_virtual_rules: HashSet<CFLRuleIndex>, // Those might contain virtual symbols and must not be queried
     pub sg_to_cfl_rule_index: Vec<CFLRuleIndex>,

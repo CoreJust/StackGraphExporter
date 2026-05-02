@@ -93,6 +93,8 @@ impl TGraph {
                     added_edges += 1;
                 }
             }
+            in_node_out.sort_unstable();
+            in_node_out.dedup();
         }
 
         for &out_node_index in &outcoming {
@@ -108,6 +110,8 @@ impl TGraph {
                     out_node_in.push(in_node_index);
                 }
             }
+            out_node_in.sort_unstable();
+            out_node_in.dedup();
         }
         self.edges_count = self.edges_count - (insize + outsize) + added_edges;
     }

@@ -1,5 +1,4 @@
 mod builder;
-mod cfl_simplifier;
 mod progress_event;
 mod simplification_options;
 mod simplify;

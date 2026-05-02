@@ -1,5 +1,5 @@
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::error::Result;
 use crate::io::{Elapsed, ElapsedAndCount, ProgressEvent as IOProgressEvent, ProgressState};
@@ -20,11 +20,6 @@ pub enum ProgressEvent {
     BuildingForCurrentEdges(ElapsedAndCount),
     BuildingSymbolEdges(ElapsedAndCount),
     BuildingNodeMetadata(ElapsedAndCount),
-    BuildingPopNodesMapping(ElapsedAndCount),
-    SimplifyingGraph {
-        substage: &'static str,
-        elapsed: Duration,
-    },
     Done(Elapsed),
 }
 
@@ -129,12 +124,6 @@ impl fmt::Display for ProgressEvent {
             ProgressEvent::BuildingNodeMetadata { .. } => {
                 write!(f, "Building metadata for nodes")
             }
-            ProgressEvent::BuildingPopNodesMapping { .. } => {
-                write!(f, "Building mapping from SG pop nodes")
-            }
-            ProgressEvent::SimplifyingGraph { substage, .. } => {
-                write!(f, "Simplifying CFL graph: {substage}")
-            }
             ProgressEvent::Done { .. } => {
                 write!(f, "CFL graph built successfully")
             }
@@ -172,15 +161,6 @@ impl IOProgressEvent for ProgressEvent {
             ProgressEvent::BuildingNodeMetadata(elapsed_and_count) => {
                 ProgressState::from_elapsed_and_count(elapsed_and_count, false)
             }
-            ProgressEvent::BuildingPopNodesMapping(elapsed_and_count) => {
-                ProgressState::from_elapsed_and_count(elapsed_and_count, false)
-            }
-            ProgressEvent::SimplifyingGraph { elapsed, .. } => ProgressState {
-                is_final: false,
-                elapsed: *elapsed,
-                progress: 0.0,
-                objects_handled: None,
-            },
             ProgressEvent::Done(elapsed) => ProgressState::from_elapsed(elapsed, true),
         }
     }

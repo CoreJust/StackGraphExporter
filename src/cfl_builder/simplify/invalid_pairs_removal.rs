@@ -7,8 +7,10 @@ use crate::{
     error::Result,
 };
 
-// Removes edges like pushX -> popY where X != Y
-pub fn remove_invalid_pairs<F>(
+// For edges like:
+// 1. pushX -> popY where X != Y - removes them
+// 2. pushX -> popX where either push or pop is virtual - merges them into eps node
+pub fn remove_or_merge_invalid_pairs<F>(
     tgraph: &mut TGraph,
     progress_monitor: &mut ProgressMonitor<F>,
     simplification_stats: &mut SimplificationStats,
@@ -26,9 +28,11 @@ where
         let rule = node.rule().unwrap();
         for &other in &node.outcoming {
             let other_node = &tgraph.nodes[other as usize];
-            if other_node.is_pop() && other_node.rule().unwrap() != rule {
-                to_remove.push((i as TNodeIndex, other));
-                simplification_stats.invalid_pairs_removed += 1;
+            if other_node.is_pop() {
+                if other_node.rule().unwrap() != rule {
+                    to_remove.push((i as TNodeIndex, other));
+                    simplification_stats.invalid_pairs_removed += 1;
+                }
             }
         }
     }

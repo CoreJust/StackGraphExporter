@@ -4,10 +4,10 @@ use crate::{
         simplification_options::ReachabilityTestMode,
         simplify::{
             invalid_end_nodes_removal::remove_invalid_end_nodes,
-            invalid_pairs_removal::remove_invalid_pairs,
+            invalid_pairs_removal::remove_or_merge_invalid_pairs,
             reachability_test::{
-                remove_unreachable, BitSetFixed, DoubleReachabilityState, SingleReachabilityState,
-                TrivialReachabilityState,
+                remove_unreachable, BitSetFixed, DoubleReachabilityState, KReachabilityState,
+                SingleReachabilityState, TrivialReachabilityState,
             },
             simplification_stats::SimplificationStats,
             transient_graph_reindexer::reindex_graph,
@@ -17,7 +17,7 @@ use crate::{
         transient_graph::TGraph,
         SimplificationOptions,
     },
-    error::Result,
+    error::{Error, Result},
 };
 
 pub fn simplify_transient_graph<F>(
@@ -34,7 +34,7 @@ where
         loop {
             let old_stats = stats.clone();
             let old_edges_count = tgraph.edges_count;
-            remove_invalid_pairs(tgraph, progress_monitor, &mut stats)?;
+            remove_or_merge_invalid_pairs(tgraph, progress_monitor, &mut stats)?;
             remove_trivial_eps_nodes(
                 tgraph,
                 simplification_options.eps_removal_tolerance,
@@ -80,6 +80,49 @@ where
                 >(
                     tgraph, progress_monitor, &mut stats
                 ),
+                ReachabilityTestMode::Custom(depth) => match depth {
+                    1 => remove_unreachable::<SingleReachabilityState<BitSetFixed>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    2 => remove_unreachable::<DoubleReachabilityState<BitSetFixed>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    3 => remove_unreachable::<KReachabilityState<BitSetFixed, 3>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    4 => remove_unreachable::<KReachabilityState<BitSetFixed, 4>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    5 => remove_unreachable::<KReachabilityState<BitSetFixed, 5>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    6 => remove_unreachable::<KReachabilityState<BitSetFixed, 6>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    7 => remove_unreachable::<KReachabilityState<BitSetFixed, 7>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    8 => remove_unreachable::<KReachabilityState<BitSetFixed, 8>, _>(
+                        tgraph,
+                        progress_monitor,
+                        &mut stats,
+                    ),
+                    _ => return Err(Error::InvalidArgument(format!("ReachabilityTestMode::Custom is allowed only till depth 8, but got {depth}"))),
+                },
                 ReachabilityTestMode::None => unreachable!(),
             }?;
             if old_unreachable_removed != stats.unreachable_nodes_removed {

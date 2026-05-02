@@ -3,21 +3,25 @@ use std::sync::OnceLock;
 use fixedbitset::FixedBitSet;
 use roaring::RoaringBitmap;
 
-pub trait BitSet: Send {
+pub trait BitSet: Send + Clone {
     fn empty(size: u32) -> Self;
     fn with_bits_set(size: u32, bits_list: &[u32]) -> Self;
 
     fn is_disjoint(&self, other: &Self) -> bool;
     fn unite_with(&mut self, other: &Self) -> bool; // True if anything changed
     fn contains(&self, bit: u32) -> bool;
+    #[allow(dead_code)]
+    fn insert(&mut self, bit: u32);
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct BitSetFixed {
     data: FixedBitSet,
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct BitSetRoaring {
     data: RoaringBitmap,
 }
@@ -187,6 +191,10 @@ impl BitSet for BitSetFixed {
     fn contains(&self, bit: u32) -> bool {
         self.data.contains(bit as usize)
     }
+
+    fn insert(&mut self, bit: u32) {
+        self.data.insert(bit as usize);
+    }
 }
 
 impl BitSet for BitSetRoaring {
@@ -216,5 +224,9 @@ impl BitSet for BitSetRoaring {
 
     fn contains(&self, bit: u32) -> bool {
         self.data.contains(bit)
+    }
+
+    fn insert(&mut self, bit: u32) {
+        self.data.insert(bit);
     }
 }

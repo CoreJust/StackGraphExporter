@@ -1,71 +1,77 @@
-use crate::cfl_builder::cfl_simplifier::simplify_graph;
 use crate::cfl_builder::progress_event::{ProgressEvent, ProgressMonitor};
 use crate::cfl_builder::transient_builder::convert_to_transient;
-use crate::cfl_builder::transient_graph::{TGraph, TNode};
+use crate::cfl_builder::transient_graph::{TGraph, TNode, TNodeIndex};
 use crate::cfl_builder::SimplificationOptions;
-use crate::core::{CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, SGGraph, SGNode, SGNodeIndex};
+use crate::core::{CFLEdge, CFLGraph, CFLNodeIndex, CFLNodeMetadata, SGGraph};
 use crate::error::Result;
 use std::collections::HashMap;
 use std::time::Duration;
 
-// For each symbol node in Stack Graph we produce 2 nodes in CFL graph:
+// For some symbol nodes in Stack Graph we produce 2 nodes in CFL graph:
 // in-node and out-node, where all the incoming edges of the original
 // node enter the in-node, all the outcoming edges go out of the out-node,
 // and there is an edge from in-node to out-node with the symbol of the original
 // node as its label.
-// Non-symbol nodes have the same index as before, for symbol nodes the in-node
-// has the same index and the out-node needs a new index which we assign here.
+// It is required in 2 case:
+// 1. The symbol node has no outcoming edges - then we have nowhere
+//    to put the symbol unless we create a new edge
+// 2. The symbol node has multiple outcoming edges - then if we
+//    label each one of them it will create multiple paths at once.
 fn generate_out_indices<F>(
     src_nodes: &[TNode],
     progress: &mut ProgressMonitor<F>,
-) -> Result<HashMap<SGNodeIndex, CFLNodeIndex>>
+) -> Result<HashMap<TNodeIndex, CFLNodeIndex>>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     let mut out_indices = HashMap::new();
     progress.stage_total = src_nodes.len();
+    let sink_node = src_nodes.len() as CFLNodeIndex; // If there'are no outcoming edges
+    let mut out_node_idx = src_nodes.len() as CFLNodeIndex + 1; // If there're multiple outcoming edges
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingOutIds(v))?;
-        if src_node.symbol.is_some() {
-            out_indices.insert(i as u32, out_indices.len() as u32 + src_nodes.len() as u32);
+        if src_node.symbol.is_some() && src_node.outcoming.len() != 1 {
+            out_indices.insert(
+                i as TNodeIndex,
+                if src_node.outcoming.is_empty() {
+                    sink_node
+                } else {
+                    let new_idx = out_node_idx;
+                    out_node_idx += 1;
+                    new_idx
+                },
+            );
         }
     }
     Ok(out_indices)
 }
 
 // Generates a mapping from CFL graph nodes to the metadata
-// (like source location).
-// For push nodes the in-nodes are mapped, for pop nodes
-// the out-nodes are mapped.
+// (like source location). It is created only for nodes
+// from which labeled edges go out.
 fn generate_node_metadata<F>(
     src_nodes: &[TNode],
-    out_indices: &HashMap<SGNodeIndex, CFLNodeIndex>,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<HashMap<CFLNodeIndex, CFLNodeMetadata>>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    let mut metadatas = HashMap::with_capacity(out_indices.len());
+    let mut metadatas = HashMap::new();
     progress.stage_total = src_nodes.len();
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingNodeMetadata(v))?;
         if let Some(metadata) = &src_node.metadata {
-            let symbol_index = src_node.symbol.unwrap();
-            let mapped_index = if TGraph::is_push(symbol_index) {
-                i as CFLNodeIndex
-            } else {
-                out_indices[&(i as u32)] as CFLNodeIndex
-            };
-            metadatas.insert(mapped_index as CFLNodeIndex, metadata.clone());
+            metadatas.insert(i as CFLNodeIndex, metadata.clone());
         }
     }
     Ok(metadatas)
 }
 
 // Generates the edges for the already existing ones.
+// Add labels where appropriate.
 fn generate_for_current_edges<F>(
     src_nodes: &[TNode],
-    out_indices: &HashMap<SGNodeIndex, CFLNodeIndex>,
+    out_indices: &HashMap<TNodeIndex, CFLNodeIndex>,
     edges_count: usize,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<Vec<CFLEdge>>
@@ -77,19 +83,21 @@ where
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingForCurrentEdges(v))?;
         for out_edge in &src_node.outcoming {
-            if src_node.symbol.is_some() {
-                edges.push(CFLEdge {
-                    from: *out_indices.get(&(i as u32)).unwrap(),
-                    to: *out_edge,
-                    symbol: None,
-                });
-            } else {
-                edges.push(CFLEdge {
-                    from: i as CFLNodeIndex,
-                    to: *out_edge,
-                    symbol: None,
-                });
-            }
+            edges.push(
+                if let Some(&out_index) = out_indices.get(&(i as TNodeIndex)) {
+                    CFLEdge {
+                        from: out_index,
+                        to: *out_edge,
+                        symbol: None,
+                    }
+                } else {
+                    CFLEdge {
+                        from: i as CFLNodeIndex,
+                        to: *out_edge,
+                        symbol: src_node.symbol,
+                    }
+                },
+            );
         }
     }
     Ok(edges)
@@ -100,7 +108,7 @@ where
 fn generate_symbol_edges<F>(
     edges: &mut Vec<CFLEdge>,
     src_nodes: &[TNode],
-    out_indices: &HashMap<SGNodeIndex, CFLNodeIndex>,
+    out_indices: &HashMap<TNodeIndex, CFLNodeIndex>,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<()>
 where
@@ -109,21 +117,16 @@ where
     progress.stage_total = out_indices.len();
     for (i, (in_idx, out_idx)) in out_indices.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingSymbolEdges(v))?;
-        if let Some(cfl_symbol_idx) = src_nodes[*in_idx as usize].symbol {
-            edges.push(CFLEdge {
-                symbol: Some(cfl_symbol_idx),
-                from: *in_idx,
-                to: *out_idx,
-            });
-        }
+        edges.push(CFLEdge {
+            symbol: src_nodes[*in_idx as usize].symbol,
+            from: *in_idx,
+            to: *out_idx,
+        });
     }
     Ok(())
 }
 
-fn generate_edges<F>(
-    tgraph: &TGraph,
-    progress: &mut ProgressMonitor<F>,
-) -> Result<(Vec<CFLEdge>, HashMap<SGNodeIndex, CFLNodeIndex>)>
+fn generate_edges<F>(tgraph: &TGraph, progress: &mut ProgressMonitor<F>) -> Result<Vec<CFLEdge>>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
@@ -131,42 +134,22 @@ where
     let mut edges =
         generate_for_current_edges(&tgraph.nodes, &out_indices, tgraph.edges_count, progress)?;
     generate_symbol_edges(&mut edges, &tgraph.nodes, &out_indices, progress)?;
-    Ok((edges, out_indices))
+    Ok(edges)
 }
 
 pub fn convert_to_cfl<F>(
     sggraph: &SGGraph,
     simplification_options: &SimplificationOptions,
     progress: F,
-) -> Result<(CFLGraph, HashMap<SGNodeIndex, CFLNodeIndex>, Duration)>
+) -> Result<(CFLGraph, Duration)>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     let mut progress_monitor = ProgressMonitor::new(progress);
     let transient_graph =
         convert_to_transient(sggraph, simplification_options, &mut progress_monitor)?;
-    let (mut edges, out_indices) = generate_edges(&transient_graph, &mut progress_monitor)?;
-    let mut metadata =
-        generate_node_metadata(&transient_graph.nodes, &out_indices, &mut progress_monitor)?;
-
-    progress_monitor.stage_total = out_indices.len();
-    let mut pop_sg_to_cfl_out = HashMap::new();
-    for (i, (&sg_idx, &cfl_out)) in (&out_indices).iter().enumerate() {
-        progress_monitor.emit_nth(i, |v| ProgressEvent::BuildingPopNodesMapping(v))?;
-        let node = &sggraph.nodes[sg_idx as usize];
-        if matches!(node, SGNode::Pop(_) | SGNode::PopScoped(_)) {
-            pop_sg_to_cfl_out.insert(sg_idx, cfl_out);
-        }
-    }
-
-    if simplification_options.simplify && simplification_options.simplify_cfl {
-        simplify_graph(
-            &mut edges,
-            &mut metadata,
-            sggraph.nodes.len() + out_indices.len(),
-            &mut progress_monitor,
-        )?;
-    }
+    let edges = generate_edges(&transient_graph, &mut progress_monitor)?;
+    let metadata = generate_node_metadata(&transient_graph.nodes, &mut progress_monitor)?;
 
     let cfl_graph = CFLGraph {
         edges,
@@ -178,9 +161,5 @@ where
     };
 
     progress_monitor.emit(|e| ProgressEvent::Done(e))?;
-    Ok((
-        cfl_graph,
-        pop_sg_to_cfl_out,
-        progress_monitor.start.elapsed(),
-    ))
+    Ok((cfl_graph, progress_monitor.start.elapsed()))
 }

@@ -20,6 +20,7 @@ pub struct ResolvedDefinition {
     pub line: usize,
     pub col: usize,
     pub local_id: u32,
+    #[allow(unused)]
     pub sg_node_index: SGNodeIndex,
 }
 
@@ -292,6 +293,10 @@ impl StackGraphContext {
         .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
 
         let resolved_in = resolution_start.elapsed();
+        progress(ProgressEvent::StitchingPaths {
+            elapsed: start.elapsed(),
+        })?;
+
         let defs = end_nodes
             .into_iter()
             .map(|node_handle| {

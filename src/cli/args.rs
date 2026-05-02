@@ -34,8 +34,6 @@ pub struct OpenArgs {
     #[arg(long)]
     pub ucfs: bool,
 
-    #[arg(long)]
-    pub verify: bool,
     #[arg(short, long)]
     pub verbose: bool,
 
@@ -45,8 +43,6 @@ pub struct OpenArgs {
 
     #[arg(long)]
     pub simplify: bool,
-    #[arg(long)]
-    pub no_simplify_cfl: bool,
     #[arg(long)]
     pub no_simplify_transient: bool,
     #[arg(
@@ -64,6 +60,8 @@ pub struct OpenArgs {
     pub remove_unreachable: bool,
     #[arg(long, alias = "with-front")]
     pub remove_unreachable_with_front: bool,
+    #[arg(long)]
+    pub remove_unreachable_deep: Option<u8>,
 
     // For KotGLL only
     #[arg(long)]

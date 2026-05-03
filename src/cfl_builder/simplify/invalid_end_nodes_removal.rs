@@ -21,6 +21,7 @@ where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     progress_monitor.stage_total = tgraph.nodes.len();
+    let mut to_remove = Vec::new();
     for i in 0..tgraph.nodes.len() {
         progress_monitor.emit_simplification_nth("Removing invalid end nodes", i)?;
         let to_be_removed = {
@@ -29,9 +30,11 @@ where
                 || (node.outcoming.is_empty() && (!node.is_real() || !node.is_pop()))
         };
         if to_be_removed {
-            tgraph.remove_node(i as TNodeIndex);
+            to_remove.push(i as TNodeIndex);
             simplification_stats.invalid_end_nodes_removed += 1;
         }
     }
+    tgraph.remove_nodes(&to_remove);
+    to_remove.clear();
     Ok(())
 }

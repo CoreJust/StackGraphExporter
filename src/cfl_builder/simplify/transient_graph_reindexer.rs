@@ -4,7 +4,7 @@ use crate::{
     cfl_builder::{
         progress_event::{ProgressEvent, ProgressMonitor},
         simplify::simplification_stats::SimplificationStats,
-        transient_graph::{TGraph, TNodeIndex},
+        transient_graph::TGraph,
     },
     core::CFLRuleIndex,
     error::Result,
@@ -19,14 +19,16 @@ where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     progress_monitor.stage_total = tgraph.nodes.len();
-    let mut reindexer = HashMap::new();
+    let mut reindexer = vec![u32::MAX; tgraph.nodes.len()];
+    let mut next_node_index = 0u32;
     for (i, n) in tgraph.nodes.iter().enumerate() {
         progress_monitor.emit_simplification_nth("Recalculating node indices", i)?;
         if n.to_be_removed() {
             simplification_stats.total_nodes_removed += 1;
             continue;
         }
-        reindexer.insert(i as TNodeIndex, reindexer.len() as TNodeIndex);
+        reindexer[i] = next_node_index;
+        next_node_index += 1;
     }
     let mut i = 0;
     tgraph.nodes.retain_mut(|n| {
@@ -37,8 +39,12 @@ where
         if n.to_be_removed() {
             return false;
         }
-        n.incoming.iter_mut().for_each(|i| *i = reindexer[i]);
-        n.outcoming.iter_mut().for_each(|i| *i = reindexer[i]);
+        n.incoming
+            .iter_mut()
+            .for_each(|i| *i = reindexer[*i as usize]);
+        n.outcoming
+            .iter_mut()
+            .for_each(|i| *i = reindexer[*i as usize]);
         true
     });
     Ok(())

@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::error::Result;
 use crate::io::{Elapsed, ElapsedAndCount, ProgressEvent as IOProgressEvent, ProgressState};
 
-const PROGRESS_ONCE_IN: usize = 128;
+const PROGRESS_ONCE_IN_BASE: usize = 256;
 
 pub enum ProgressEvent {
     BuildingSymbolRules(ElapsedAndCount),
@@ -46,8 +46,18 @@ where
         }
     }
 
+    fn progress_in(&self) -> usize {
+        if self.stage_total < PROGRESS_ONCE_IN_BASE * 128 {
+            (self.stage_total / 128).min(1)
+        } else if self.stage_total < PROGRESS_ONCE_IN_BASE * 512 {
+            PROGRESS_ONCE_IN_BASE
+        } else {
+            (self.stage_total / 1024).min(1)
+        }
+    }
+
     pub fn emit_simplification_nth(&mut self, substage: &'static str, i: usize) -> Result<()> {
-        if i % PROGRESS_ONCE_IN == 0 {
+        if i % self.progress_in() == 0 || i >= self.stage_total - 1 {
             (self.cb)(ProgressEvent::SimplifyingTransientGraph {
                 substage,
                 iteration: self.simplification_iteration,
@@ -66,7 +76,7 @@ where
     where
         CB: FnMut(ElapsedAndCount) -> ProgressEvent,
     {
-        if i % PROGRESS_ONCE_IN == 0 {
+        if i % self.progress_in() == 0 || i >= self.stage_total - 1 {
             (self.cb)(make_progress_event(ElapsedAndCount {
                 current: i,
                 total: self.stage_total,

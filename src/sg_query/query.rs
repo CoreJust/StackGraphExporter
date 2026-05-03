@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 const PROGRESS_ONCE_IN: usize = 128;
+const MAX_PATHS_QUERY_CHUNK_SIZE: usize = 1024 * 32;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedDefinition {
@@ -43,6 +44,7 @@ pub struct QueryAllResult {
     pub defs: Vec<ResolvedDefinition>,
     pub total_refs: usize,
     pub total_defs: usize,
+    pub total_unique_pairs: usize,
 }
 
 pub enum ResolutionResult {
@@ -63,6 +65,13 @@ impl StackGraphContext {
         let mut result = Vec::new();
         let mut found_defs = 0;
         let total = self.sggraph.nodes.len();
+        let potentially_virtuals = self
+            .sggraph
+            .symbols
+            .iter()
+            .filter_map(|s| if !s.real { Some(&s.name) } else { None })
+            .collect::<HashSet<_>>();
+        let mut rejected = 0;
         for (idx, node) in self.sggraph.nodes.iter().enumerate() {
             if idx % PROGRESS_ONCE_IN == 0 {
                 if let Some(name) = by_symbol {
@@ -96,10 +105,15 @@ impl StackGraphContext {
             if let Some(sym_idx) = symbol_idx {
                 let sym = &self.sggraph.symbols[sym_idx as usize];
                 if (by_symbol.is_none() || sym.name == by_symbol.unwrap()) && sym.real {
-                    result.push(idx as SGNodeIndex);
+                    if potentially_virtuals.contains(&sym.name) {
+                        rejected += 1;
+                    } else {
+                        result.push(idx as SGNodeIndex);
+                    }
                 }
             }
         }
+        crate::warn!("Rejected {rejected} potentially virtual symbols");
         if let Some(name) = by_symbol {
             progress(ProgressEvent::FoundSymbolReferences {
                 elapsed: start.elapsed(),
@@ -275,22 +289,29 @@ impl StackGraphContext {
         let stitcher_config = StitcherConfig::default().with_detect_similar_paths(true);
 
         let mut end_nodes = HashSet::new();
+        let mut start_end_pairs = HashSet::new();
         let mut total_defs = 0;
-        ForwardPartialPathStitcher::find_all_complete_partial_paths(
-            &mut db_candidates,
-            start_node_handles,
-            stitcher_config,
-            &NoCancellation,
-            |g, _ps, p| {
-                let node = &g[p.end_node()];
-                if !node.is_definition() {
-                    panic!("end_node was not a definition!");
-                }
-                end_nodes.insert(p.end_node());
-                total_defs += 1;
-            },
-        )
-        .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
+        for handles_chunk in start_node_handles.chunks(MAX_PATHS_QUERY_CHUNK_SIZE) {
+            ForwardPartialPathStitcher::find_all_complete_partial_paths(
+                &mut db_candidates,
+                handles_chunk.iter().copied().collect::<Vec<_>>(),
+                stitcher_config,
+                &NoCancellation,
+                |g, _ps, p| {
+                    let node = &g[p.end_node()];
+                    if !node.is_definition() {
+                        panic!("end_node was not a definition!");
+                    }
+                    start_end_pairs.insert((p.start_node(), p.end_node()));
+                    end_nodes.insert(p.end_node());
+                    total_defs += 1;
+                },
+            )
+            .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
+            progress(ProgressEvent::StitchingPaths {
+                elapsed: start.elapsed(),
+            })?;
+        }
 
         let resolved_in = resolution_start.elapsed();
         progress(ProgressEvent::StitchingPaths {
@@ -354,6 +375,7 @@ impl StackGraphContext {
                 defs,
                 total_defs,
                 total_refs,
+                total_unique_pairs: start_end_pairs.len(),
             }))
         }
     }

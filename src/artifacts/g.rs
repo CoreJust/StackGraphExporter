@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use crate::artifacts::cfl_display_symbol::CFLDisplaySymbol;
@@ -22,14 +24,11 @@ pub trait ToG {
         index_rules: bool,
         inverse_graph: bool,
     ) -> Result<()> {
-        use std::fs::File;
-        use std::io::Write;
-
         if index_rules {
             assert!(matches!(order, GOrder::FromToLabel));
         }
 
-        let mut out_file = File::create(&out_path)?;
+        let mut out_file = BufWriter::new(File::create(&out_path)?);
         let mut g_lines = self.to_g_lines(index_rules);
         g_lines.sort();
 

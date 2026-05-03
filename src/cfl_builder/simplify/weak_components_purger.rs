@@ -26,21 +26,23 @@ where
     let mut visited = vec![false; n];
     let mut removed = 0;
 
+    let mut stack = Vec::new();
+    let mut component = Vec::new();
+
     for start_idx in 0..n {
         progress_monitor.emit_simplification_nth("Purging weak components", start_idx)?;
         if visited[start_idx] {
             continue;
         }
-
         if tgraph.nodes[start_idx].to_be_removed() {
             visited[start_idx] = true;
             continue;
         }
 
-        let mut stack = vec![start_idx as TNodeIndex];
-        let mut component = Vec::new();
-
         visited[start_idx] = true;
+        stack.clear();
+        component.clear();
+        stack.push(start_idx as TNodeIndex);
 
         while let Some(current) = stack.pop() {
             component.push(current);

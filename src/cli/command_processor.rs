@@ -291,9 +291,10 @@ impl CommandProcessor {
     fn cmd_query_all(&mut self) -> Result<()> {
         let result = self.engine.query_all_symbols()?;
         crate::success!(
-            "Found {} definitions ({} unique ones) for {} references in {}ms",
+            "Found {} definitions ({} unique ones) and a total of {} unique pairs for {} references in {}ms",
             result.total_defs,
             result.defs.len(),
+            result.total_unique_pairs,
             result.total_refs,
             result.resolved_in.as_millis(),
         );

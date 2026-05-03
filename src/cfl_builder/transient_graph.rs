@@ -78,6 +78,7 @@ impl TGraph {
         let insize = incoming.len();
         let outsize = outcoming.len();
         let mut added_edges = 0usize;
+        let mut dedupped_half_edges = 0usize;
 
         for &in_node_index in &incoming {
             let in_node_out = &mut self.nodes[in_node_index as usize].outcoming;
@@ -94,7 +95,9 @@ impl TGraph {
                 }
             }
             in_node_out.sort_unstable();
+            let old_in_node_len = in_node_out.len();
             in_node_out.dedup();
+            dedupped_half_edges += old_in_node_len - in_node_out.len();
         }
 
         for &out_node_index in &outcoming {
@@ -111,9 +114,18 @@ impl TGraph {
                 }
             }
             out_node_in.sort_unstable();
+            let old_out_node_len = out_node_in.len();
             out_node_in.dedup();
+            dedupped_half_edges += old_out_node_len - out_node_in.len();
         }
-        self.edges_count = self.edges_count - (insize + outsize) + added_edges;
+        self.edges_count =
+            self.edges_count - (insize + outsize) + added_edges - (dedupped_half_edges / 2);
+    }
+
+    pub fn remove_nodes(&mut self, indices: &[TNodeIndex]) {
+        for &index in indices {
+            self.remove_node(index);
+        }
     }
 
     // Does not remove node physically - indices are not invalidated

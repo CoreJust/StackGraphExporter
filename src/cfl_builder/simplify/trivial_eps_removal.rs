@@ -38,9 +38,9 @@ where
                     && !node.to_be_removed() // If it's already to be removed - there's no use in doing it again
             };
             if to_be_removed {
-                tgraph.remove_node(i as TNodeIndex);
                 simplification_stats.trivial_eps_removed += 1;
                 needs_more_iterations = true;
+                tgraph.remove_node(i as TNodeIndex);
             }
         }
         simplification_stats.trivial_eps_removal_iterations += 1;

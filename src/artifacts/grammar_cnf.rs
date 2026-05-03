@@ -1,4 +1,6 @@
 use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use crate::artifacts::cfl_display_symbol::CFLDisplaySymbol;
@@ -20,10 +22,7 @@ pub trait ToCNFGrammar {
     ) -> (NonTerminal, Vec<(NonTerminal, CNFRuleRightPart)>);
 
     fn write_to_cnf_file(self: &Self, out_path: &PathBuf, inverse_grammar: bool) -> Result<()> {
-        use std::fs::File;
-        use std::io::Write;
-
-        let mut out_file = File::create(&out_path)?;
+        let mut out_file = BufWriter::new(File::create(&out_path)?);
         let (start, rules) = self.to_cnf_lines(inverse_grammar);
         writeln!(out_file, "{}\n", start.0)?;
         for (from, to) in rules.into_iter() {

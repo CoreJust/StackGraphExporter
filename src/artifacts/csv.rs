@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use crate::core::CFLGraph;
@@ -7,10 +9,7 @@ pub trait ToCSV {
     fn to_csv_table(self: &Self) -> Vec<(String, Vec<String>)>; // Vec of columns
 
     fn write_to_csv_file(self: &Self, out_path: &PathBuf, print_titles: bool) -> Result<()> {
-        use std::fs::File;
-        use std::io::Write;
-
-        let mut out_file = File::create(&out_path)?;
+        let mut out_file = BufWriter::new(File::create(&out_path)?);
         let csv_table = self.to_csv_table();
         assert!(csv_table.iter().all(|c| c.1.len() == csv_table[0].1.len()));
 

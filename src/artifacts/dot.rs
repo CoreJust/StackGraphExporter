@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -41,7 +41,7 @@ pub trait ToDOT {
         F: FnMut(ProgressEvent) -> Result<()>,
     {
         let start = Instant::now();
-        let mut out_file = File::create(&out_path)?;
+        let mut out_file = BufWriter::new(File::create(&out_path)?);
         let dot = self.to_dot_lines(for_query_generation, inverse_graph, &mut progress)?;
         let total_lines = dot.len();
 

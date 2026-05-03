@@ -8,6 +8,8 @@ pub trait BitSet: Send + Clone {
     fn with_bits_set(size: u32, bits_list: &[u32]) -> Self;
 
     fn is_disjoint(&self, other: &Self) -> bool;
+    #[allow(dead_code)]
+    fn is_superset(&self, other: &Self) -> bool;
     fn unite_with(&mut self, other: &Self) -> bool; // True if anything changed
     fn contains(&self, bit: u32) -> bool;
     #[allow(dead_code)]
@@ -175,6 +177,10 @@ impl BitSet for BitSetFixed {
         self.data.is_disjoint(&other.data)
     }
 
+    fn is_superset(&self, other: &Self) -> bool {
+        self.data.is_superset(&other.data)
+    }
+
     #[inline]
     fn unite_with(&mut self, other: &Self) -> bool {
         assert!(self.data.len() == other.data.len());
@@ -214,6 +220,10 @@ impl BitSet for BitSetRoaring {
 
     fn is_disjoint(&self, other: &Self) -> bool {
         self.data.is_disjoint(&other.data)
+    }
+
+    fn is_superset(&self, other: &Self) -> bool {
+        self.data.is_superset(&other.data)
     }
 
     fn unite_with(&mut self, other: &Self) -> bool {

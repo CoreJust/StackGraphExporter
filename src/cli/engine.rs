@@ -26,6 +26,7 @@ pub struct Engine {
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
     pub all_symbols: bool,
+    pub inverse: bool,
     pub simplification_options: SimplificationOptions,
     pub used_simplification_options: SimplificationOptions,
     pub sppf: bool,
@@ -97,6 +98,7 @@ impl Engine {
             kotgll_enabled: args.kotgll,
             ucfs_enabled: args.ucfs,
             all_symbols: args.all_symbols,
+            inverse: args.inverse,
             simplification_options: SimplificationOptions::make(
                 args.simplify,
                 args.no_simplify_transient,
@@ -479,6 +481,7 @@ impl Engine {
     ) -> Result<PathBuf> {
         let path = self.output_path(artifact);
         self.generated_artifacts.insert(artifact, path.clone());
+        let inverse = self.inverse;
         match artifact {
             ArtifactType::Cfg => {
                 let cfl = self.ensure_cfl_graph()?;
@@ -492,12 +495,14 @@ impl Engine {
                 let ctx = self.ensure_context()?;
                 let mut renderer = ProgressRenderer::new();
                 ctx.sggraph
-                    .write_to_dot_file(&path, false, false, |e| renderer.render(&e))?;
+                    .write_to_dot_file(&path, false, false, false, |e| renderer.render(&e))?;
             }
             ArtifactType::DotUcfs => {
                 let cfl = self.ensure_cfl_graph()?;
                 let mut renderer = ProgressRenderer::new();
-                cfl.write_to_dot_file(&path, true, for_query_generation, |e| renderer.render(&e))?;
+                cfl.write_to_dot_file(&path, true, for_query_generation, inverse, |e| {
+                    renderer.render(&e)
+                })?;
                 let cfl_stats = if self.used_simplification_options.simplify {
                     &mut self.stats.cfl_graph_simplified
                 } else {
@@ -509,9 +514,13 @@ impl Engine {
             ArtifactType::Kt => {
                 let cfl = self.ensure_cfl_graph()?;
                 let mut renderer = ProgressRenderer::new();
-                cfl.write_to_kotlin_file(&path, "UCFSGrammar", for_query_generation, |e| {
-                    renderer.render(&e)
-                })?;
+                cfl.write_to_kotlin_file(
+                    &path,
+                    "UCFSGrammar",
+                    for_query_generation,
+                    inverse,
+                    |e| renderer.render(&e),
+                )?;
                 self.stats.cfl_grammar.path = path.display().to_string();
                 self.stats.cfl_grammar.file_size =
                     std::fs::metadata(&self.stats.cfl_grammar.path)?.len();
@@ -523,18 +532,18 @@ impl Engine {
             }
             ArtifactType::G => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromLabelTo, false)?;
+                cfl.write_to_g_file(&path, GOrder::FromLabelTo, false, inverse)?;
             }
             ArtifactType::GCfg => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromToLabel, true)?;
+                cfl.write_to_g_file(&path, GOrder::FromToLabel, true, inverse)?;
             }
             ArtifactType::Cnf => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_cnf_file(&path)?;
+                cfl.write_to_cnf_file(&path, inverse)?;
             }
             ArtifactType::CnfCfg => {
-                write_to_cnf_cfg_file(&path)?;
+                write_to_cnf_cfg_file(&path, inverse)?;
             }
         }
         Ok(path)

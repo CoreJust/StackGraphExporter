@@ -16,6 +16,7 @@ pub trait ToKTGrammar {
         &self,
         class_name: &str,
         for_query_generation: bool,
+        inverse_grammar: bool,
         progress: &mut F,
     ) -> Result<Vec<String>>
     where
@@ -26,6 +27,7 @@ pub trait ToKTGrammar {
         out_path: &PathBuf,
         class_name: &str,
         for_query_generation: bool,
+        inverse_grammar: bool,
         mut progress: F,
     ) -> Result<()>
     where
@@ -33,7 +35,12 @@ pub trait ToKTGrammar {
     {
         let mut file = File::create(out_path)?;
         let start = Instant::now();
-        let kt = self.to_kotlin_lines(class_name, for_query_generation, &mut progress)?;
+        let kt = self.to_kotlin_lines(
+            class_name,
+            for_query_generation,
+            inverse_grammar,
+            &mut progress,
+        )?;
         let total_lines = kt.len();
         for (i, line) in kt.into_iter().enumerate() {
             writeln!(file, "{line}")?;
@@ -64,12 +71,20 @@ impl ToKTGrammar for CFLGraph {
         &self,
         class_name: &str,
         for_query_generation: bool,
+        inverse_grammar: bool,
         progress: &mut F,
     ) -> Result<Vec<String>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        KotlinGrammarGenerator::new(self, class_name, for_query_generation, progress).generate()
+        KotlinGrammarGenerator::new(
+            self,
+            class_name,
+            for_query_generation,
+            inverse_grammar,
+            progress,
+        )
+        .generate()
     }
 }
 
@@ -80,6 +95,7 @@ where
     graph: &'a CFLGraph,
     class_name: &'a str,
     for_query_generation: bool,
+    inverse_grammar: bool,
     progress: &'a mut F,
     start: Instant,
 }
@@ -92,12 +108,14 @@ where
         graph: &'a CFLGraph,
         class_name: &'a str,
         for_query_generation: bool,
+        inverse_grammar: bool,
         progress: &'a mut F,
     ) -> Self {
         Self {
             graph,
             class_name,
             for_query_generation,
+            inverse_grammar,
             progress,
             start: Instant::now(),
         }
@@ -144,6 +162,7 @@ where
         kt_lines.push(kt_grammar_productions_map_build(
             sg_symbols_count,
             self.for_query_generation,
+            self.inverse_grammar,
         ));
         kt_lines.push("\t}".to_string());
         Ok(())

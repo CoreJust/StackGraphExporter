@@ -105,9 +105,10 @@ impl CommandProcessor {
             "cnf" => self.engine.gen_cnf = true,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
+            "inverse" => self.engine.inverse = true,
             "simplify" => self.engine.simplification_options.simplify = true,
             _ => {
-                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, all-symbols, simplify, g, g-cfg, cnf, cnf-cfg");
+                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, all-symbols, inverse, simplify, g, g-cfg, cnf, cnf-cfg");
                 return Ok(());
             }
         }
@@ -132,9 +133,10 @@ impl CommandProcessor {
             "cnf" => self.engine.gen_cnf = false,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
+            "inverse" => self.engine.inverse = false,
             "simplify" => self.engine.simplification_options.simplify = false,
             _ => {
-                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, all-symbols, simplify, g, g-cfg, cnf, cnf-cfg", feature);
+                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, all-symbols, inverse, simplify, g, g-cfg, cnf, cnf-cfg", feature);
                 return Ok(());
             }
         }

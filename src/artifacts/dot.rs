@@ -9,17 +9,23 @@ use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
 use crate::io::ElapsedAndCount;
 
-const WRITE_ONCE_IN_N: usize = 128;
+const WRITE_ONCE_IN_N: usize = 256;
+
+type From = Option<u32>;
+type To = u32;
+type Label = String;
 
 pub trait ToDOT {
     const ARTIFACT_NAME: &'static str;
+    const DIGRAPH_NAME: &'static str;
+    const PRINT_EMPTY_FROM_AS_START: bool;
 
     fn to_dot_lines<F>(
         self: &Self,
-        clean_dot: bool,
         for_query_generation: bool,
+        inverse_graph: bool,
         progress: &mut F,
-    ) -> Result<Vec<String>>
+    ) -> Result<Vec<(From, Option<Label>, To)>>
     where
         F: FnMut(ProgressEvent) -> Result<()>;
 
@@ -28,6 +34,7 @@ pub trait ToDOT {
         out_path: &PathBuf,
         clean_dot: bool,
         for_query_generation: bool,
+        inverse_graph: bool,
         mut progress: F,
     ) -> Result<()>
     where
@@ -35,11 +42,31 @@ pub trait ToDOT {
     {
         let start = Instant::now();
         let mut out_file = File::create(&out_path)?;
-        let dot = self.to_dot_lines(clean_dot, for_query_generation, &mut progress)?;
+        let dot = self.to_dot_lines(for_query_generation, inverse_graph, &mut progress)?;
         let total_lines = dot.len();
 
-        for (i, line) in dot.into_iter().enumerate() {
-            writeln!(out_file, "{line}")?;
+        writeln!(out_file, "digraph {} {{", Self::DIGRAPH_NAME)?;
+        if !clean_dot {
+            writeln!(out_file, "  rankdir=LR;\n  node [shape=box, fontsize=10];")?;
+        }
+        for (i, (from, label, to)) in dot.into_iter().enumerate() {
+            if let Some(from) = from {
+                writeln!(
+                    out_file,
+                    "  {from} -> {to} [label=\"{}\"];",
+                    label.unwrap_or("".into()),
+                )?;
+            } else {
+                if Self::PRINT_EMPTY_FROM_AS_START {
+                    writeln!(out_file, "  start -> {to} ;")?;
+                } else {
+                    writeln!(
+                        out_file,
+                        "  {to} [label=\"{}\"];",
+                        label.unwrap_or("".into()),
+                    )?;
+                }
+            }
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::WritingLines {
                     elapsed_and_count: ElapsedAndCount {
@@ -51,6 +78,7 @@ pub trait ToDOT {
                 })?;
             }
         }
+        writeln!(out_file, "}}")?;
         progress(ProgressEvent::ArtifactStored {
             elapsed_and_count: ElapsedAndCount {
                 current: total_lines,
@@ -133,13 +161,15 @@ fn make_node_name(
 
 impl ToDOT for SGGraph {
     const ARTIFACT_NAME: &'static str = "Stack Graph DOT";
+    const DIGRAPH_NAME: &'static str = "stackgraph";
+    const PRINT_EMPTY_FROM_AS_START: bool = false;
 
     fn to_dot_lines<F>(
         self: &Self,
-        clean_dot: bool,
         for_query_generation: bool,
+        inverse_graph: bool,
         progress: &mut F,
-    ) -> Result<Vec<String>>
+    ) -> Result<Vec<(Option<u32>, Option<String>, u32)>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
@@ -147,19 +177,15 @@ impl ToDOT for SGGraph {
             !for_query_generation,
             "SGGraph cannot be used for query generation",
         );
+        assert!(!inverse_graph, "SGGraph is not supposed to be inverted",);
 
         let start = Instant::now();
-        let mut dot_lines: Vec<String> = Vec::new();
-        dot_lines.push("digraph stackgraph {".to_string());
-        if !clean_dot {
-            dot_lines.push("  rankdir=LR;".to_string());
-            dot_lines.push("  node [shape=box, fontsize=10];".to_string());
-        }
+        let mut dot_lines = Vec::new();
         for (i, node) in self.nodes.iter().enumerate() {
             let id = &self.ids[i];
             let node_name = make_node_name(&self.ids, &id, &self.symbols, &self.files, &node);
             let node_name = esc_dot_label(&node_name);
-            dot_lines.push(format!("  {} [label=\"{}\"];", i, node_name));
+            dot_lines.push((None, Some(node_name), i as To));
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
                     elapsed: start.elapsed(),
@@ -170,7 +196,7 @@ impl ToDOT for SGGraph {
         }
 
         for (i, edge) in self.edges.iter().enumerate() {
-            dot_lines.push(format!("  {} -> {};", edge.from, edge.to));
+            dot_lines.push((Some(edge.from as u32), None, edge.to as To));
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
                     elapsed: start.elapsed(),
@@ -179,31 +205,26 @@ impl ToDOT for SGGraph {
                 })?;
             }
         }
-
-        dot_lines.push("}".to_string());
         Ok(dot_lines)
     }
 }
 
 impl ToDOT for CFLGraph {
     const ARTIFACT_NAME: &'static str = "CFL Graph DOT";
+    const DIGRAPH_NAME: &'static str = "cflgraph";
+    const PRINT_EMPTY_FROM_AS_START: bool = true;
 
     fn to_dot_lines<F>(
         self: &Self,
-        clean_dot: bool,
         for_query_generation: bool,
+        inverse_graph: bool,
         progress: &mut F,
-    ) -> Result<Vec<String>>
+    ) -> Result<Vec<(Option<u32>, Option<String>, u32)>>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
         let start = Instant::now();
-        let mut dot_lines: Vec<String> = Vec::new();
-        dot_lines.push("digraph stackgraph {".to_string());
-        if !clean_dot {
-            dot_lines.push("  rankdir=LR;".to_string());
-            dot_lines.push("  node [shape=box, fontsize=10];".to_string());
-        }
+        let mut dot_lines = Vec::new();
 
         let mut start_nodes = HashSet::new();
         let potential_virtuals = self
@@ -212,22 +233,28 @@ impl ToDOT for CFLGraph {
             .filter(|m| !m.1.is_real)
             .map(|m| &m.1.name)
             .collect::<HashSet<_>>();
+        let expected_start_nodes_modulo = if inverse_graph { 1 } else { 0 };
         for (i, edge) in self.edges.iter().enumerate() {
-            let label = edge
-                .symbol
-                .and_then(|s| Some(format!("[label = \"{}\"]", Self::get_symbol_name(s))))
-                .unwrap_or("[label = \"\"]".to_string());
-            dot_lines.push(format!("  {} -> {} {};", edge.from, edge.to, label));
+            let label = edge.symbol.and_then(|s| Some(Self::get_symbol_name(s)));
+            if inverse_graph {
+                dot_lines.push((Some(edge.to), label, edge.from));
+            } else {
+                dot_lines.push((Some(edge.from), label, edge.to));
+            }
             if !for_query_generation
                 && edge.symbol.is_some()
-                && edge.symbol.unwrap() % 2 == 0
+                && edge.symbol.unwrap() % 2 == expected_start_nodes_modulo
                 && self
                     .metadata
                     .get(&edge.from)
                     .and_then(|m| Some(m.is_real && !potential_virtuals.contains(&m.name)))
                     .unwrap_or(false)
             {
-                start_nodes.insert(edge.from);
+                if inverse_graph {
+                    start_nodes.insert(edge.to);
+                } else {
+                    start_nodes.insert(edge.from);
+                }
             }
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
@@ -244,10 +271,9 @@ impl ToDOT for CFLGraph {
             );
         }
         for node in start_nodes {
-            dot_lines.push(format!("  start -> {node} ;"));
+            dot_lines.push((None, None, node as To));
         }
 
-        dot_lines.push("}".to_string());
         Ok(dot_lines)
     }
 }

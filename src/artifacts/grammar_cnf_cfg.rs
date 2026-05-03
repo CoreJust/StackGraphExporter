@@ -3,14 +3,31 @@ use std::path::PathBuf;
 
 use crate::error::Result;
 
-pub fn write_to_cnf_cfg_file(out_path: &PathBuf) -> Result<()> {
+pub fn write_to_cnf_cfg_file(out_path: &PathBuf, inverse_grammar: bool) -> Result<()> {
     use std::fs::File;
     use std::io::Write;
 
     let mut out_file = File::create(&out_path)?;
-    writeln!(
-        out_file,
-        "S
+
+    if inverse_grammar {
+        writeln!(
+            out_file,
+            "S
+S eps S
+S Q S
+S V S
+S#pp_i pp_i S
+S#vpp_i vpp_i S
+V S#vpp_i vpsh_i
+Q S#pp_i psh_i
+
+Count:
+Q"
+        )?;
+    } else {
+        writeln!(
+            out_file,
+            "S
 S eps S
 S Q S
 S V S
@@ -21,6 +38,7 @@ Q S#psh_i pp_i
 
 Count:
 Q"
-    )?;
+        )?;
+    }
     Ok(())
 }

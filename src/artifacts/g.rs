@@ -20,6 +20,7 @@ pub trait ToG {
         out_path: &PathBuf,
         order: GOrder,
         index_rules: bool,
+        inverse_graph: bool,
     ) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
@@ -33,6 +34,11 @@ pub trait ToG {
         g_lines.sort();
 
         for (from, label, to) in g_lines {
+            let (from, to) = if inverse_graph {
+                (to, from)
+            } else {
+                (from, to)
+            };
             match order {
                 GOrder::FromLabelTo => writeln!(out_file, "{from} {label} {to}"),
                 GOrder::FromToLabel => {

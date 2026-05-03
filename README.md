@@ -283,6 +283,12 @@ By default, in the query mode you you only see nodes which are at the beginning 
 *Note: even in medium-sized projects one symbol might have hundreds or thousands of nodes. Filtering them by having at least one partial path can reduce the number by several times. It was verified emperically that nodes without partial paths are resolbed to nothing. But it must be further investigated.*
 
 ```
+      --inverse
+```
+
+Changes direction of all edges in the CFL graph and swaps the grammar. It might improve performance in all-paths CFL queries.
+
+```
   -v, --verbose
   -h, --help
 ```

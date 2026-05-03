@@ -19,6 +19,7 @@ use std::time::Duration;
 //    label each one of them it will create multiple paths at once.
 fn generate_out_indices<F>(
     src_nodes: &[TNode],
+    rules_count: usize,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<HashMap<TNodeIndex, CFLNodeIndex>>
 where
@@ -26,15 +27,29 @@ where
 {
     let mut out_indices = HashMap::new();
     progress.stage_total = src_nodes.len();
-    let mut out_node_idx = src_nodes.len() as CFLNodeIndex;
+    let mut out_node_idx = src_nodes.len() as CFLNodeIndex; // For nodes with multiple outcoming edges
+    let mut sink_node_buckets = Vec::new(); // For nodes without outcoming edges
+    let mut sink_node_counts = vec![0; rules_count];
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingOutIds(v))?;
-        if src_node.symbol.is_some() && src_node.outcoming.len() != 1 {
-            out_indices.insert(i as TNodeIndex, {
-                let new_idx = out_node_idx;
-                out_node_idx += 1;
-                new_idx
-            });
+        if src_node.is_real() && src_node.outcoming.len() != 1 {
+            out_indices.insert(
+                i as TNodeIndex,
+                if src_node.outcoming.is_empty() {
+                    let rule = src_node.rule().unwrap();
+                    let index_within_same_rule = sink_node_counts[rule as usize];
+                    sink_node_counts[rule as usize] += 1;
+                    if index_within_same_rule >= sink_node_buckets.len() {
+                        sink_node_buckets.push(out_node_idx);
+                        out_node_idx += 1;
+                    }
+                    sink_node_buckets[index_within_same_rule]
+                } else {
+                    let new_idx = out_node_idx;
+                    out_node_idx += 1;
+                    new_idx
+                },
+            );
         }
     }
     Ok(out_indices)
@@ -124,7 +139,11 @@ fn generate_edges<F>(tgraph: &TGraph, progress: &mut ProgressMonitor<F>) -> Resu
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
-    let out_indices = generate_out_indices(&tgraph.nodes, progress)?;
+    let out_indices = generate_out_indices(
+        &tgraph.nodes,
+        tgraph.cfl_push_pop_rules_count as usize,
+        progress,
+    )?;
     let mut edges =
         generate_for_current_edges(&tgraph.nodes, &out_indices, tgraph.edges_count, progress)?;
     generate_symbol_edges(&mut edges, &tgraph.nodes, &out_indices, progress)?;

@@ -9,12 +9,18 @@ import org.ucfs.rsm.symbol.Term
 pub fn kt_grammar_productions_map_build(
     sg_symbols_count: u32,
     for_query_generation: bool,
+    inverse_grammar: bool,
 ) -> String {
+    let push_pop_expr = if inverse_grammar {
+        "Term(\"pp$i\") * S * Term(\"psh$i\")"
+    } else {
+        "Term(\"psh$i\") * S * Term(\"pp$i\")"
+    };
     if for_query_generation {
         format!(
             "\t\tS /= (
 \t\t\t(0..{sg_symbols_count})
-\t\t\t\t.map {{ i -> Term(\"psh$i\") * S * Term(\"pp$i\") }}
+\t\t\t\t.map {{ i -> {push_pop_expr} }}
 \t\t\t\t.fold<Regexp, Regexp>(Empty) {{ acc, p -> acc or p }}
 \t\t\tor Term(\"\")
 \t\t).many"
@@ -22,7 +28,7 @@ pub fn kt_grammar_productions_map_build(
     } else {
         format!(
             "\t\tQ /= (0..{sg_symbols_count})
-    \t\t\t.map {{ i -> Term(\"psh$i\") * S * Term(\"pp$i\") }}
+    \t\t\t.map {{ i -> {push_pop_expr} }}
     \t\t\t.fold<Regexp, Regexp>(Empty) {{ acc, p -> acc or p }}"
         )
     }

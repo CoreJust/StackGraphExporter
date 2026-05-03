@@ -63,6 +63,9 @@ pub struct OpenArgs {
     #[arg(long)]
     pub remove_unreachable_deep: Option<u8>,
 
+    #[arg(long)]
+    pub inverse: bool,
+
     // For KotGLL only
     #[arg(long)]
     pub sppf: bool,

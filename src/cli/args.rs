@@ -36,6 +36,8 @@ pub struct OpenArgs {
 
     #[arg(short, long)]
     pub verbose: bool,
+    #[arg(long)]
+    pub verify: bool,
 
     // Show all references, not only those with at least one partial path
     #[arg(long, alias = "all")]
@@ -43,15 +45,8 @@ pub struct OpenArgs {
 
     #[arg(long)]
     pub simplify: bool,
-    #[arg(long)]
-    pub no_simplify_transient: bool,
-    #[arg(
-        long,
-        alias = "max-simplification-iterations",
-        alias = "max-transient-simplify-iterations",
-        alias = "max-simplify-iterations"
-    )]
-    pub max_transient_simplification_iterations: Option<usize>,
+    #[arg(long, alias = "max-simplify-iterations")]
+    pub max_simplification_iterations: Option<usize>,
     #[arg(long, alias = "eps-tolerance")]
     pub eps_removal_tolerance: Option<isize>,
     #[arg(long)]

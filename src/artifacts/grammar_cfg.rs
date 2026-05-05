@@ -23,7 +23,7 @@ impl ToCFGGrammar for CFLGraph {
         let mut result = Vec::with_capacity((self.cfl_push_pop_rules_count * 2 + 2) as usize);
         (0..self.cfl_push_pop_rules_count).for_each(|r| {
             result.push(format!(
-                "Nonterminal(\"S\") -> Terminal(\"psh{0}\") S Terminal(\"pp{0}\")",
+                "Nonterminal(\"S\") -> Terminal(\"psh{0}\") NonTerminal(“S”) Terminal(\"pp{0}\")",
                 r,
             ));
         });

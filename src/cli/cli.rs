@@ -77,6 +77,8 @@ fn run_open(args: OpenArgs) -> Result<()> {
 
     if immediates_count == 0 {
         crate::cli::interactive::run_interactive(processor)?;
+    } else {
+        processor.process(Command::PeakMemUsage)?;
     }
 
     Ok(())

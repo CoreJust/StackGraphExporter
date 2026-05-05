@@ -1,6 +1,6 @@
 use super::progress_event::ProgressEvent;
 use crate::cfl_builder::get_symbol_of;
-use crate::core::{SGFileIndex, SGNode, SGNodeId, SGNodeIndex, SGSymbolIndex};
+use crate::core::{SGFileIndex, SGNode, SGNodeId, SGNodeIndex, SGSymbolIndex, PEAK_ALLOC};
 use crate::error::{Error, Result};
 use crate::io::ElapsedAndCount;
 use crate::sg_builder::StackGraphContext;
@@ -223,12 +223,13 @@ impl StackGraphContext {
     pub fn resolve_reference<F>(
         &mut self,
         node_index: SGNodeIndex,
+        print_peak_memory_usage: bool,
         progress: F,
     ) -> Result<QueryOneResult>
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        match self.resolve_reference_or_all(Some(node_index), progress)? {
+        match self.resolve_reference_or_all(Some(node_index), print_peak_memory_usage, progress)? {
             ResolutionResult::ForOne(result) => Ok(result),
             ResolutionResult::ForAll(_) => panic!(),
         }
@@ -238,7 +239,7 @@ impl StackGraphContext {
     where
         F: FnMut(ProgressEvent) -> Result<()>,
     {
-        match self.resolve_reference_or_all(None, progress)? {
+        match self.resolve_reference_or_all(None, true, progress)? {
             ResolutionResult::ForOne(_) => panic!(),
             ResolutionResult::ForAll(result) => Ok(result),
         }
@@ -247,6 +248,7 @@ impl StackGraphContext {
     pub fn resolve_reference_or_all<F>(
         &mut self,
         node_index: Option<SGNodeIndex>,
+        print_peak_memory_usage: bool,
         mut progress: F,
     ) -> Result<ResolutionResult>
     where
@@ -283,6 +285,10 @@ impl StackGraphContext {
             elapsed: start.elapsed(),
         })?;
 
+        let initial_memory_usage = PEAK_ALLOC.current_usage();
+        if print_peak_memory_usage {
+            PEAK_ALLOC.reset_peak_usage();
+        }
         let resolution_start = Instant::now();
         let (db, partials) = self.database.as_mut().unwrap();
         let mut db_candidates = DatabaseCandidates::new(&self.stack_graph, partials, db);
@@ -314,6 +320,7 @@ impl StackGraphContext {
         }
 
         let resolved_in = resolution_start.elapsed();
+        let query_peak_mem_usage = PEAK_ALLOC.peak_usage() - initial_memory_usage;
         progress(ProgressEvent::StitchingPaths {
             elapsed: start.elapsed(),
         })?;
@@ -355,6 +362,13 @@ impl StackGraphContext {
         progress(ProgressEvent::PathsStitched {
             elapsed: start.elapsed(),
         })?;
+        if print_peak_memory_usage {
+            crate::info!(
+                "Peak memory usage when querying stack graph: {} MB (or {} bytes)",
+                query_peak_mem_usage / (1024 * 1024),
+                query_peak_mem_usage
+            );
+        }
         if let Some(node_index) = node_index {
             let ref_symbol_index = get_symbol_of(&self.sggraph.nodes[node_index as usize])
                 .expect("Resolved reference has no corresponding symbol in SGGraph");
@@ -386,6 +400,8 @@ impl StackGraphContext {
     {
         if self.database.is_none() {
             let start = Instant::now();
+            let initial_memory_usage = PEAK_ALLOC.current_usage();
+            PEAK_ALLOC.reset_peak_usage();
             let mut db = Database::new();
             let mut partials = PartialPaths::new();
             let stitcher_config = StitcherConfig::default()
@@ -413,11 +429,17 @@ impl StackGraphContext {
                     Error::PathExtraction(format!("Failed to build database for file: {}", e))
                 })?;
             }
+            let database_peak_mem_usage = PEAK_ALLOC.peak_usage() - initial_memory_usage;
 
             progress(ProgressEvent::DatabaseBuilt {
                 elapsed: start.elapsed(),
             })?;
 
+            crate::info!(
+                "Peak memory usage when building partial paths database: {} MB ({} bytes)",
+                database_peak_mem_usage / (1024 * 1024),
+                database_peak_mem_usage,
+            );
             self.database = Some((db, partials));
             self.database_built_in = Some(start.elapsed());
         }

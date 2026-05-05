@@ -1,10 +1,9 @@
 use super::indexers::{FileIndexer, NodeIdIndexer, SymbolIndexer};
-use super::parsers::{parse_edge, parse_node};
+use super::parsers::{parse_edge, parse_node, Indexers};
 use super::progress_event::ProgressEvent;
 use super::resolver::resolve_push_scoped;
 use crate::core::{SGGraph, SGNodeId};
 use crate::error::Result;
-use crate::sg_builder::parsers::Indexers;
 use stack_graphs::arena::Handle;
 use stack_graphs::graph::{Node as StackGraphNode, StackGraph};
 use stack_graphs::partial::PartialPaths;

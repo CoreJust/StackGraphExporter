@@ -85,12 +85,11 @@ where
         .into_iter()
         .filter_map(|r| reindexer.get(&r).and_then(|r| Some(*r)))
         .collect();
-    tgraph.sg_to_cfl_rule_index.retain_mut(|r| {
+    tgraph.sg_to_cfl_rule_index.iter_mut().for_each(|r| {
         if let Some(&new_rule) = reindexer.get(&r) {
             *r = new_rule;
-            true
         } else {
-            false
+            *r = CFLRuleIndex::MAX;
         }
     });
     let rules_removed = tgraph.cfl_push_pop_rules_count - reindexer.len() as CFLRuleIndex;

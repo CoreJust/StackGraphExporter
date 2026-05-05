@@ -11,7 +11,7 @@ use rand::seq::SliceRandom;
 use crate::{
     cfl_builder::SimplificationOptions,
     cli::{artifact_type::ArtifactType, engine::Engine},
-    core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats},
+    core::{CFLNodeIndex, DefinitionStats, QueryStats, SGNodeIndex, SymbolStats, PEAK_ALLOC},
     error::{Error, Result},
     io::{ElapsedAndCount, ProgressRenderer},
     sg_query::{ProgressEvent, QueryOneResult},
@@ -48,6 +48,9 @@ pub enum Command {
     PickQueries {
         count: u32,
     },
+    CurrentMemUsage,
+    PeakMemUsage,
+    ResetPeakMemUsage,
     State,
     Help,
     Exit,
@@ -75,6 +78,9 @@ impl CommandProcessor {
             Command::QueryNode { node } => self.cmd_query_node(node),
             Command::QueryAll => self.cmd_query_all(),
             Command::PickQueries { count } => self.cmd_pick_queries(count),
+            Command::CurrentMemUsage => self.tell_current_mem_usage(),
+            Command::PeakMemUsage => self.tell_peak_mem_usage(),
+            Command::ResetPeakMemUsage => self.reset_peak_mem_usage(),
             Command::State => self.cmd_state(),
             Command::Help => self.cmd_help(),
             Command::Exit => self.cmd_exit(),
@@ -100,15 +106,23 @@ impl CommandProcessor {
                 self.engine.gen_dot_ucfs = true;
                 self.engine.gen_kt = true;
             }
+            "json" => self.engine.gen_json = true,
+            "sg-dot" | "sg_dot" => self.engine.gen_dot = true,
+            "dot_ucfs" | "dot-ucfs" => self.engine.gen_dot_ucfs = true,
+            "kt" => self.engine.gen_kt = true,
+            "csv" => self.engine.gen_csv = true,
+            "cfg" => self.engine.gen_cfg = true,
             "g" => self.engine.gen_g = true,
             "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = true,
             "cnf" => self.engine.gen_cnf = true,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = true,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = true,
+            "verbose" => self.engine.verbose = true,
+            "verify" => self.engine.verify = true,
             "inverse" => self.engine.inverse = true,
             "simplify" => self.engine.simplification_options.simplify = true,
             _ => {
-                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, all-symbols, inverse, simplify, g, g-cfg, cnf, cnf-cfg");
+                crate::error!("Unknown feature '{feature}'; Supported features: kotgll, ucfs, all-symbols, verbose, verify, inverse, simplify, json, sg-dot, dot-ucfs, kt, csv, cfg, g, g-cfg, cnf, cnf-cfg");
                 return Ok(());
             }
         }
@@ -128,15 +142,23 @@ impl CommandProcessor {
                 self.engine.gen_dot_ucfs = false;
                 self.engine.gen_kt = false;
             }
+            "json" => self.engine.gen_json = false,
+            "sg-dot" | "sg_dot" => self.engine.gen_dot = false,
+            "dot_ucfs" | "dot-ucfs" => self.engine.gen_dot_ucfs = false,
+            "kt" => self.engine.gen_kt = false,
+            "csv" => self.engine.gen_csv = false,
+            "cfg" => self.engine.gen_cfg = false,
             "g" => self.engine.gen_g = false,
             "g_cfg" | "g-cfg" => self.engine.gen_g_cfg = false,
             "cnf" => self.engine.gen_cnf = false,
             "cnf_cfg" | "cnf-cfg" => self.engine.gen_cnf_cfg = false,
             "all_symbols" | "all-symbols" => self.engine.all_symbols = false,
+            "verbose" => self.engine.verbose = false,
+            "verify" => self.engine.verify = false,
             "inverse" => self.engine.inverse = false,
             "simplify" => self.engine.simplification_options.simplify = false,
             _ => {
-                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, all-symbols, inverse, simplify, g, g-cfg, cnf, cnf-cfg", feature);
+                crate::error!("Unknown feature '{}'; Supported features: kotgll, ucfs, all-symbols, verbose, verify, inverse, simplify, json, sg-dot, dot-ucfs, kt, csv, cfg, g, g-cfg, cnf, cnf-cfg", feature);
                 return Ok(());
             }
         }
@@ -309,8 +331,7 @@ impl CommandProcessor {
             let mut rng = StdRng::seed_from_u64(count as u64);
             resolved_symbols
                 .choose_multiple_weighted(&mut rng, count as usize, |item| {
-                    let resolved_in = item.resolved_in.as_millis() as f64;
-                    resolved_in * resolved_in
+                    item.resolved_in.as_millis() as f64
                 })
                 .map_err(|e| Error::Internal(format!("Weighted sampling failed: {e}")))?
                 .into_iter()
@@ -340,14 +361,23 @@ impl CommandProcessor {
         use std::io::Write;
 
         self.engine.generate_artifact(ArtifactType::Kt, true)?;
-        self.engine.simplification_options = SimplificationOptions::no_simpify();
+        let old_simplification_options = std::mem::replace(
+            &mut self.engine.simplification_options,
+            SimplificationOptions::no_simpify(),
+        );
         self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
-        self.engine.simplification_options = SimplificationOptions::simpify();
+        self.engine.simplification_options = if old_simplification_options.simplify {
+            old_simplification_options
+        } else {
+            SimplificationOptions::simpify()
+        };
         let nonsimplified_cfl_path = self.engine.output_path(ArtifactType::DotUcfs);
         self.engine.output_overrides.insert(
             ArtifactType::DotUcfs,
             Self::with_file_name_appended(&nonsimplified_cfl_path, "_simplified"),
         );
+        let unsimplified_sg_symbol_to_cfl_rule_mapping =
+            self.engine.grab_rule_index_of_symbol_mapping();
         self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
 
         let resolved_symbols = self.pick_symbols(count)?;
@@ -363,7 +393,8 @@ impl CommandProcessor {
             self.engine.stats.queries.push(QueryStats {
                 symbol: SymbolStats {
                     name: rs.name,
-                    own_index: self.engine.rule_index_of_symbol(rs.symbol_index),
+                    own_index: unsimplified_sg_symbol_to_cfl_rule_mapping[rs.symbol_index as usize],
+                    own_index_simplified: self.engine.rule_index_of_symbol(rs.symbol_index),
                     cfl_index: rs.node_index as CFLNodeIndex, // For non-simplified it is the same
                     cfl_index_simplified: cfl_index[0],
                     file: rs.file,
@@ -402,11 +433,38 @@ impl CommandProcessor {
         Ok(())
     }
 
+    fn tell_current_mem_usage(&self) -> Result<()> {
+        crate::info!(
+            "Current memory usage is {} MB (or {} bytes)",
+            PEAK_ALLOC.current_usage_as_mb(),
+            PEAK_ALLOC.current_usage(),
+        );
+        Ok(())
+    }
+
+    fn tell_peak_mem_usage(&self) -> Result<()> {
+        crate::info!(
+            "Peak memory usage is {} MB (or {} bytes)",
+            PEAK_ALLOC.peak_usage_as_mb(),
+            PEAK_ALLOC.peak_usage(),
+        );
+        Ok(())
+    }
+
+    fn reset_peak_mem_usage(&self) -> Result<()> {
+        PEAK_ALLOC.reset_peak_usage();
+        crate::success!("Peak memory usage was successfully reset");
+        Ok(())
+    }
+
     fn cmd_state(&self) -> Result<()> {
         crate::info!("Current configuration:");
         crate::info!("  KotGLL enabled: {}", self.engine.kotgll_enabled);
         crate::info!("  UCFS enabled: {}", self.engine.ucfs_enabled);
-        crate::info!("  All symbols: {}", self.engine.all_symbols);
+        crate::info!("  Verification enabled: {}", self.engine.verify);
+        crate::info!("  Verbose output enabled: {}", self.engine.verbose);
+        crate::info!("  All symbols enabled: {}", self.engine.all_symbols);
+        crate::info!("  CFL graph inversion enabled: {}", self.engine.inverse);
         crate::info!(
             "  Simplify CFL:\n\t{:?};\n  Already simplified?\n\t{:?})",
             self.engine.simplification_options,
@@ -414,6 +472,15 @@ impl CommandProcessor {
         );
         crate::info!("  Output directory: {}", self.engine.output_dir.display());
         crate::info!("  Artifact overrides: {:?}", self.engine.output_overrides);
+        crate::info!(
+            "  Generated artifacts: {}",
+            self.engine
+                .generated_artifacts
+                .iter()
+                .map(|(a, _)| format!("{a:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         Ok(())
     }
 
@@ -424,9 +491,13 @@ impl CommandProcessor {
         crate::info!("  disable <feature> (alternative: d)");
         crate::info!("  output [artifact] <path> (alternative: o)");
         crate::info!("  create <artifact> (alternative: c)");
-        crate::info!("  clean <artifact>");
+        crate::info!("  clean [<artifact>]");
         crate::info!("  query <symbol> (alternative: q, r, run)");
         crate::info!("  query_all (alternative: qall, rall, run_all)");
+        crate::info!("  memory (alternative: mem)");
+        crate::info!("  current_memory (alternative: curr_mem)");
+        crate::info!("  peak_memory (alternative: peak_mem)");
+        crate::info!("  reset_memory (alternative: reset_mem)");
         crate::info!("  state (alternative: s)");
         crate::info!("  help (alternative: h)");
         crate::info!("  exit (alternative: quit, halt)");
@@ -434,6 +505,7 @@ impl CommandProcessor {
     }
 
     fn cmd_exit(&self) -> Result<()> {
+        self.tell_peak_mem_usage()?;
         std::process::exit(0);
     }
 

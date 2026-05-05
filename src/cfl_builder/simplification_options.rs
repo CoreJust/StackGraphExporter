@@ -19,7 +19,7 @@ pub struct SimplificationOptions {
     pub remove_unreachable: ReachabilityTestMode,
 }
 
-const DEFAULT_EPS_REMOVAL_TOLERANCE: isize = 5;
+const DEFAULT_EPS_REMOVAL_TOLERANCE: isize = 0;
 
 impl SimplificationOptions {
     pub fn no_simpify() -> Self {
@@ -34,7 +34,7 @@ impl SimplificationOptions {
     pub fn simpify() -> Self {
         Self {
             simplify: true,
-            transient_simplification_iterations: None,
+            transient_simplification_iterations: Some(2),
             eps_removal_tolerance: DEFAULT_EPS_REMOVAL_TOLERANCE,
             remove_unreachable: ReachabilityTestMode::Custom(3),
         }
@@ -42,7 +42,6 @@ impl SimplificationOptions {
 
     pub fn make(
         simplify: bool,
-        no_simplify_transient: bool,
         max_transient_simplification_iterations: Option<usize>,
         eps_removal_tolerance: Option<isize>,
         remove_unreachable_trivial: bool,
@@ -61,11 +60,7 @@ impl SimplificationOptions {
         }
         Ok(Self {
             simplify,
-            transient_simplification_iterations: if no_simplify_transient {
-                Some(0)
-            } else {
-                max_transient_simplification_iterations
-            },
+            transient_simplification_iterations: max_transient_simplification_iterations,
             eps_removal_tolerance: eps_removal_tolerance.unwrap_or(DEFAULT_EPS_REMOVAL_TOLERANCE),
             remove_unreachable: if remove_unreachable_with_front {
                 ReachabilityTestMode::Double

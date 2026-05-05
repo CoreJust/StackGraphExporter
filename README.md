@@ -207,7 +207,8 @@ Stores the output in ./queries.sgeq in the format of:
     {
       "symbol": {
         "name": "<symbol name>",
-        "own_index": <symbol index in stack graph symbol list (needed to make a query)>,
+        "own_index": <cfl rule index corresponding to that symbol in unsimplified cfl graph>,
+        "own_index_simplified": <cfl rule index corresponding to that symbol in simplified cfl graph>,
         "cfl_index": <node index in CFL graph (the one you need to make queries)>,
         "cfl_index_simplified": <node index in simplified CFL graph (the one you need to make queries)>,
         "file": "<the file the symbol is located at>",
@@ -236,16 +237,10 @@ For graph files, there is no need for a placeholder. Just add one or more lines 
       --simplify
 ```
 
-Enables simplification.
+Enables simplification heuristics with the default parameters.
 
 ```
-      --no-simplify-transient
-```
-
-Disable simplification on transient stage.
-
-```
-      --max-[transient-]simplification-iterations or --max-[transient-]simplify-iterations <NUMBER>
+      --max-simplification-iterations or --max-simplify-iterations <NUMBER>
 ```
 
 Limits the number of optimization iterations during transient stage. Be default they are unlimited and continue as long as there is something to simplify.
@@ -268,12 +263,6 @@ Enables reachability test. *It can significantly affect performance*, especially
 See more about simplification heuristics below.
 
 9. Other flags:
-```
-      --verify
-```
-
-Enables verification. When verification is enabled and the query is done with KotGLL, the results are parsed and compared to the results produced by stack graphs. **For UCFS verification is not implemented yet.**
-
 ```
       --all-symbols
 ```
@@ -336,16 +325,21 @@ Q
 
 Eps -> eps
 S -> 
-S -> S Q
-S -> S Eps
+S -> Q S
+S -> V S
+S -> Eps S
 
-FOR EACH i {
+FOR EACH rule i {
   NT#psh$i -> psh$i
   NT#pp$i -> pp$i
-  Q#psh$i -> NT#psh$i S
-  Q -> S#psh$i NT#pp$i
+  Q#psh$i -> NT#psh$i S if i is real
+  V#psh$i -> NT#psh$i S if i can be virtual (so it cannot be queried directly)
+  Q -> Q#psh$i NT#pp$i
+  V -> V#psh$i NT#pp$i
 }
 ```
+
+For CFG the grammar is the same, but indexing is used, thus there is no explicit FOR EACH i.
 
 ## Simplification
 
@@ -357,3 +351,4 @@ Currently there are several mechanisms of simplification. They are done during t
 4. *Weakly connected components pruning*. If there is no such symbol X that a WCC contains at least one pair of real pushX and popX, then no paths can go through this component and we can safely prune it completely.
 5. *Reachability test*. The idea is to start a wave algorithm from push nodes forward and then separately from pop nodes backward. This way, all nodes are marked with what push nodes can theoretically reach them and what pop nodes can be theoretically reached from them. It doesn't account for the symbol stack, but still we can find and prune nodes with empty intersection between these 2 sets. The trivial version is a simplified one when we only check if any push and any pop are potentially reachable. It is the fastest one, but also produces the least results.
 6. *Reachability test with front*. A slightly advanced version of the previous test. We additionally mark what pushes / pops can potentially immediately reach / be reached (by immediately I mean on top of symbol stack). A deep version is an even more advanced one where stack is emulated up to the given depth (note that increasing depth increases memory and performance requirements correspondingly but gives less effect with each next depth level).
+7. *Graph reversal*. It was suggested that starting queries from pop nodes (or from definitions) rather than from push nodes (or references) for all-paths is more effecient. It proved to be true - despite no changes in graph structure and grammar, queries ran 2-3x faster producing same pairs.

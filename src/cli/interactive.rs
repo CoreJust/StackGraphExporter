@@ -130,6 +130,29 @@ pub fn run_interactive(mut processor: CommandProcessor) -> Result<()> {
                     }
                 }
             }
+            "memory" | "mem" => {
+                if let Err(e) = processor.process(Command::CurrentMemUsage) {
+                    crate::error!("{}", e);
+                }
+                if let Err(e) = processor.process(Command::PeakMemUsage) {
+                    crate::error!("{}", e);
+                }
+            }
+            "current_memory" | "curr_mem" => {
+                if let Err(e) = processor.process(Command::CurrentMemUsage) {
+                    crate::error!("{}", e);
+                }
+            }
+            "peak_memory" | "peak_mem" => {
+                if let Err(e) = processor.process(Command::PeakMemUsage) {
+                    crate::error!("{}", e);
+                }
+            }
+            "reset_mempry" | "reset_mem" => {
+                if let Err(e) = processor.process(Command::ResetPeakMemUsage) {
+                    crate::error!("{}", e);
+                }
+            }
             "state" | "s" => {
                 if let Err(e) = processor.process(Command::State) {
                     crate::error!("{}", e);

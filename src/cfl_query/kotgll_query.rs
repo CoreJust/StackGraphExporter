@@ -1,17 +1,21 @@
 use crate::cfl_query::progress_event::ProgressEvent;
-use crate::core::{CFLNodeIndex, CFLPath};
+use crate::core::{CFLNodeIndex, CFLPath, CFLRuleIndex};
 use crate::error::{Error, Result};
 use std::fs::{read_to_string, write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
-fn prepare_query_grammar(grammar_path: &PathBuf, symbol: &str) -> Result<PathBuf> {
+fn prepare_query_grammar(grammar_path: &PathBuf, rule: CFLRuleIndex) -> Result<PathBuf> {
     let query_grammar_path = grammar_path.with_file_name(".cfl_query.cfg");
     let grammar = read_to_string(grammar_path)?;
+    crate::debug!(
+        "Grammar len: {}, store to {query_grammar_path:?}",
+        grammar.len()
+    );
     let content = format!(
-        "StartNonterminal(\"Q\")\nNonterminal(\"Q\") -> Terminal(\"push_{0}\") Nonterminal(\"S\") Terminal(\"pop_{0}\")\n{1}",
-        symbol, grammar,
+        "StartNonterminal(\"Q\")\nNonterminal(\"Q\") -> Terminal(\"psh{0}\") Nonterminal(\"S\") Terminal(\"pp{0}\")\n{1}",
+        rule, grammar,
     );
     write(&query_grammar_path, content)?;
     Ok(query_grammar_path)
@@ -77,7 +81,7 @@ pub fn kotgll_query<F>(
     grammar_path: &PathBuf,
     graph_path: &PathBuf,
     output_dir: &PathBuf,
-    symbol: &str,
+    rule: CFLRuleIndex,
     sppf: bool,
     mut progress: F,
 ) -> Result<Vec<CFLPath>>
@@ -88,7 +92,7 @@ where
     progress(ProgressEvent::PreparingQueryGrammar {
         elapsed: start.elapsed(),
     })?;
-    let query_grammar_path = prepare_query_grammar(grammar_path, symbol)?;
+    let query_grammar_path = prepare_query_grammar(grammar_path, rule)?;
     let output_path = output_dir.join(".kotgll_result.txt");
 
     progress(ProgressEvent::RunningKotgll {

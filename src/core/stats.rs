@@ -30,6 +30,7 @@ pub struct CFLGrammarStats {
 pub struct SymbolStats {
     pub name: String,
     pub own_index: CFLSymbolIndex,
+    pub own_index_simplified: CFLSymbolIndex,
     pub cfl_index: CFLNodeIndex,
     pub cfl_index_simplified: CFLNodeIndex,
     pub file: String,

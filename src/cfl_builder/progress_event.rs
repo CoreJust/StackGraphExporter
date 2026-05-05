@@ -47,12 +47,12 @@ where
     }
 
     fn progress_in(&self) -> usize {
-        if self.stage_total < PROGRESS_ONCE_IN_BASE * 128 {
-            (self.stage_total / 128).min(1)
-        } else if self.stage_total < PROGRESS_ONCE_IN_BASE * 512 {
+        if self.stage_total < PROGRESS_ONCE_IN_BASE * 32 {
+            (self.stage_total / 32).min(1)
+        } else if self.stage_total < PROGRESS_ONCE_IN_BASE * 256 {
             PROGRESS_ONCE_IN_BASE
         } else {
-            (self.stage_total / 1024).min(1)
+            (self.stage_total / 256).min(1)
         }
     }
 

@@ -32,6 +32,8 @@ where
     let mut sink_node_counts = vec![0; rules_count];
     for (i, src_node) in src_nodes.iter().enumerate() {
         progress.emit_nth(i, |v| ProgressEvent::BuildingOutIds(v))?;
+        // TODO: check for cases when there are several definition nodes with a single edge and all of them end in the same node.
+        // Then we cannot attach the symbol to all the edges lest we want to lose some pairs in query results.
         if src_node.is_real() && src_node.outcoming.len() != 1 {
             out_indices.insert(
                 i as TNodeIndex,

@@ -2,21 +2,18 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::cfl_builder::SimplificationOptions;
-use crate::cli::artifact_type::ArtifactType;
-use crate::core::{CFLRuleIndex, SGSymbolIndex, Stats};
-use crate::io::ElapsedAndCount;
-use crate::sg_query::{ProgressEvent, QueryAllResult, QueryOneResult};
-use crate::unsupported_features_cleaner::clean_unsupported_features;
+use super::artifact_type::ArtifactType;
 use crate::{
     artifacts::*,
-    cfl_builder::convert_to_cfl,
+    cfl_builder::{convert_to_cfl, SimplificationOptions},
     cfl_query::{kotgll_query, ucfs_query},
-    core::{CFLGraph, CFLNodeIndex, SGFileIndex, SGNodeIndex},
+    core::{CFLGraph, CFLNodeIndex, CFLRuleIndex, SGFileIndex, SGNodeIndex, SGSymbolIndex, Stats},
     error::{Error, Result},
-    io::ProgressRenderer,
+    io::{ElapsedAndCount, ProgressRenderer},
     loading::{load_stack_graph, Language},
     sg_builder::{build_sggraph, StackGraphContext},
+    sg_query::{ProgressEvent, QueryAllResult, QueryOneResult},
+    unsupported_features_cleaner::clean_unsupported_features,
 };
 
 pub struct Engine {
@@ -31,6 +28,7 @@ pub struct Engine {
     pub used_simplification_options: SimplificationOptions,
     pub sppf: bool,
     pub verbose: bool,
+    pub verify: bool,
     pub gen_cfg: bool,
     pub gen_csv: bool,
     pub gen_dot: bool,
@@ -46,6 +44,7 @@ pub struct Engine {
     pub kotgll_path: Option<PathBuf>,
     pub generated_artifacts: HashMap<ArtifactType, PathBuf>,
     pub stats: Stats,
+    generated_for_query: HashSet<ArtifactType>,
     context: Option<StackGraphContext>,
     cfl_graph: Option<CFLGraph>,
     nodes_with_partials: HashSet<SGNodeIndex>,
@@ -101,8 +100,7 @@ impl Engine {
             inverse: args.inverse,
             simplification_options: SimplificationOptions::make(
                 args.simplify,
-                args.no_simplify_transient,
-                args.max_transient_simplification_iterations,
+                args.max_simplification_iterations,
                 args.eps_removal_tolerance,
                 args.remove_unreachable_trivial,
                 args.remove_unreachable,
@@ -111,6 +109,7 @@ impl Engine {
             )?,
             sppf: args.sppf,
             verbose: args.verbose,
+            verify: args.verify,
             gen_cfg: args.cfg,
             gen_csv: args.csv,
             gen_dot: args.stack_graph_dot,
@@ -128,6 +127,7 @@ impl Engine {
             stats: Stats {
                 ..Default::default()
             },
+            generated_for_query: HashSet::new(),
             context: None,
             cfl_graph: None,
             used_simplification_options: SimplificationOptions::no_simpify(),
@@ -180,6 +180,11 @@ impl Engine {
     }
 
     fn ensure_cfl_graph<'a>(&'a mut self) -> Result<&'a CFLGraph> {
+        if matches!(self.language, Language::Python) {
+            return Err(Error::CflConversion(
+                "CFL conversion is only available for language with static types; Python is not one - cannot generate CFLGraph"
+                    .into()));
+        }
         let simplify = self.simplification_options.clone();
         if self.cfl_graph.is_some() && self.used_simplification_options == simplify {
             if self.verbose {
@@ -220,7 +225,17 @@ impl Engine {
     }
 
     pub fn rule_index_of_symbol(&self, index: SGSymbolIndex) -> CFLRuleIndex {
-        self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index as usize]
+        let result = self.cfl_graph.as_ref().unwrap().sg_to_cfl_rule_index[index as usize];
+        assert_ne!(
+            result,
+            CFLRuleIndex::MAX,
+            "The rule for sg symbol was eliminated during simplification",
+        );
+        result
+    }
+
+    pub fn grab_rule_index_of_symbol_mapping(&mut self) -> Vec<CFLRuleIndex> {
+        std::mem::take(&mut self.cfl_graph.as_mut().unwrap().sg_to_cfl_rule_index)
     }
 
     pub fn query_all_symbols(&mut self) -> Result<QueryAllResult> {
@@ -242,9 +257,9 @@ impl Engine {
         let start = Instant::now();
         let total_refs = refs.len();
         for (i, r) in refs.into_iter().enumerate() {
-            let resolution_result = ctx.resolve_reference(r, |_| Ok(()))?;
+            let resolution_result = ctx.resolve_reference(r, false, |_| Ok(()))?;
             if !resolution_result.defs.is_empty() {
-                let second_resolution_result = ctx.resolve_reference(r, |_| Ok(()))?;
+                let second_resolution_result = ctx.resolve_reference(r, false, |_| Ok(()))?;
                 result.push(
                     // Ensure more stable results
                     if second_resolution_result.resolved_in < resolution_result.resolved_in {
@@ -279,7 +294,8 @@ impl Engine {
     ) -> Result<()> {
         let ctx = self.ensure_context()?;
         for r in result {
-            let resolution_result = ctx.resolve_reference(resolution.node_index, |_| Ok(()))?;
+            let resolution_result =
+                ctx.resolve_reference(resolution.node_index, false, |_| Ok(()))?;
             *r = resolution_result.resolved_in;
         }
         Ok(())
@@ -366,7 +382,7 @@ impl Engine {
     pub fn resolve_reference(&mut self, node_idx: SGNodeIndex) -> Result<QueryOneResult> {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
-        let result = ctx.resolve_reference(node_idx, |e| renderer.render(&e));
+        let result = ctx.resolve_reference(node_idx, true, |e| renderer.render(&e));
         self.stats.partial_database_built_in =
             ctx.database_built_in.unwrap_or(Duration::ZERO).as_millis() as u64;
         result
@@ -414,12 +430,17 @@ impl Engine {
         if !self.kotgll_enabled {
             return Err(Error::Internal("KotGLL backend not enabled".into()));
         }
-        if !self.generated_artifacts.contains_key(&ArtifactType::Cfg) {
-            self.generate_artifact(ArtifactType::Cfg, true)?;
-        }
-        if !self.generated_artifacts.contains_key(&ArtifactType::Csv) {
-            self.generate_artifact(ArtifactType::Csv, true)?;
-        }
+        self.generate_artifact_or_get_cached(ArtifactType::Cfg, true)?;
+        self.generate_artifact_or_get_cached(ArtifactType::Csv, true)?;
+
+        let sg_symbol_index = self
+            .ensure_context()?
+            .sggraph
+            .symbols
+            .iter()
+            .position(|sym| sym.name == symbol)
+            .expect("No such symbol") as SGSymbolIndex;
+        let rule_index = self.rule_index_of_symbol(sg_symbol_index);
         let mut renderer = ProgressRenderer::new();
         kotgll_query(
             self.kotgll_path
@@ -428,7 +449,7 @@ impl Engine {
             &self.generated_artifacts[&ArtifactType::Cfg],
             &self.generated_artifacts[&ArtifactType::Csv],
             &self.output_dir,
-            symbol,
+            rule_index,
             self.sppf,
             |e| renderer.render(&e),
         )?;
@@ -443,17 +464,8 @@ impl Engine {
         if !self.ucfs_enabled {
             return Err(Error::Internal("UCFS backend not enabled".into()));
         }
-        if !self.generated_artifacts.contains_key(&ArtifactType::Kt) {
-            self.generate_artifact(ArtifactType::Kt, true)?;
-        }
-        if !self
-            .generated_artifacts
-            .contains_key(&ArtifactType::DotUcfs)
-        {
-            self.generate_artifact(ArtifactType::DotUcfs, true)?;
-        }
-        let grammar_path = self.generated_artifacts[&ArtifactType::Kt].clone();
-        let dot_path = self.generated_artifacts[&ArtifactType::DotUcfs].clone();
+        let grammar_path = self.generate_artifact_or_get_cached(ArtifactType::Kt, true)?;
+        let dot_path = self.generate_artifact_or_get_cached(ArtifactType::DotUcfs, true)?;
         let output_dir = self.output_dir.clone();
         let sg_symbol_index = self
             .ensure_context()?
@@ -474,6 +486,20 @@ impl Engine {
         )
     }
 
+    fn generate_artifact_or_get_cached(
+        &mut self,
+        artifact: ArtifactType,
+        for_query_generation: bool,
+    ) -> Result<PathBuf> {
+        if self.generated_artifacts.contains_key(&artifact)
+            && self.generated_for_query.contains(&artifact) == for_query_generation
+        {
+            Ok(self.generated_artifacts[&artifact].clone())
+        } else {
+            self.generate_artifact(artifact, for_query_generation)
+        }
+    }
+
     pub fn generate_artifact(
         &mut self,
         artifact: ArtifactType,
@@ -481,6 +507,11 @@ impl Engine {
     ) -> Result<PathBuf> {
         let path = self.output_path(artifact);
         self.generated_artifacts.insert(artifact, path.clone());
+        if for_query_generation {
+            self.generated_for_query.insert(artifact);
+        } else {
+            self.generated_for_query.remove(&artifact);
+        }
         let inverse = self.inverse;
         match artifact {
             ArtifactType::Cfg => {

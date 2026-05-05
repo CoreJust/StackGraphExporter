@@ -7,3 +7,5 @@
 *.sgeq
 *.cnf
 *.g
+*.py
+.kotgll_result.txt

@@ -33,6 +33,8 @@ pub struct OpenArgs {
     pub kotgll: bool,
     #[arg(long)]
     pub ucfs: bool,
+    #[arg(long)]
+    pub cfg_bench: bool,
 
     #[arg(short, long)]
     pub verbose: bool,

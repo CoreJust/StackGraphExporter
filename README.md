@@ -189,19 +189,24 @@ Stores the output in ./queries.sgeq in the format of:
     "built_in": <duration in milliseconds>, // includes grammar build time
     "file_size": <graph file size in bytes>,
     "vertices": <vertices count in the graph>,
-    "edges": <edges count in the graph>
+    "edges": <edges count in the graph>,
+    "grammar": {
+      "path": "<path to the generated grammar file>",
+      "file_size": <grammar file size in bytes>,
+      "rules": <rules count in the grammar>
+    }
   },
   "cfl_graph_simplified": {
     "path": "<path to the generated graph file>",
     "built_in": <duration in milliseconds>, // includes grammar build time
     "file_size": <graph file size in bytes>,
     "vertices": <vertices count in the graph>,
-    "edges": <edges count in the graph>
-  },
-  "cfl_grammar": {
-    "path": "<path to the generated grammar file>",
-    "file_size": <grammar file size in bytes>,
-    "rules": <rules count in the grammar>
+    "edges": <edges count in the graph>,
+    "grammar": {
+      "path": "<path to the generated grammar file>",
+      "file_size": <grammar file size in bytes>,
+      "rules": <rules count in the grammar>
+    }
   },
   "queries": [
     {

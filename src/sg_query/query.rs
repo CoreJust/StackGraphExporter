@@ -289,7 +289,6 @@ impl StackGraphContext {
         if print_peak_memory_usage {
             PEAK_ALLOC.reset_peak_usage();
         }
-        let resolution_start = Instant::now();
         let (db, partials) = self.database.as_mut().unwrap();
         let mut db_candidates = DatabaseCandidates::new(&self.stack_graph, partials, db);
         let stitcher_config = StitcherConfig::default().with_detect_similar_paths(true);
@@ -297,6 +296,7 @@ impl StackGraphContext {
         let mut end_nodes = HashSet::new();
         let mut start_end_pairs = HashSet::new();
         let mut total_defs = 0;
+        let resolution_start = Instant::now();
         for handles_chunk in start_node_handles.chunks(MAX_PATHS_QUERY_CHUNK_SIZE) {
             ForwardPartialPathStitcher::find_all_complete_partial_paths(
                 &mut db_candidates,
@@ -314,9 +314,11 @@ impl StackGraphContext {
                 },
             )
             .map_err(|e| Error::PathExtraction(format!("Failed to find complete paths: {}", e)))?;
-            progress(ProgressEvent::StitchingPaths {
-                elapsed: start.elapsed(),
-            })?;
+            if total_refs != 1 {
+                progress(ProgressEvent::StitchingPaths {
+                    elapsed: start.elapsed(),
+                })?;
+            }
         }
 
         let resolved_in = resolution_start.elapsed();

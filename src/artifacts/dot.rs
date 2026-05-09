@@ -1,10 +1,10 @@
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::artifacts::progress_event::ProgressEvent;
+use crate::artifacts::start_nodes_collector::collect_start_nodes;
 use crate::core::{CFLGraph, SGGraph, SGNode, SGNodeId, SGSymbol};
 use crate::error::Result;
 use crate::io::ElapsedAndCount;
@@ -226,35 +226,12 @@ impl ToDOT for CFLGraph {
         let start = Instant::now();
         let mut dot_lines = Vec::new();
 
-        let mut start_nodes = HashSet::new();
-        let potential_virtuals = self
-            .metadata
-            .iter()
-            .filter(|m| !m.1.is_real)
-            .map(|m| &m.1.name)
-            .collect::<HashSet<_>>();
-        let expected_start_nodes_modulo = if inverse_graph { 1 } else { 0 };
         for (i, edge) in self.edges.iter().enumerate() {
             let label = edge.symbol.and_then(|s| Some(Self::get_symbol_name(s)));
             if inverse_graph {
                 dot_lines.push((Some(edge.to), label, edge.from));
             } else {
                 dot_lines.push((Some(edge.from), label, edge.to));
-            }
-            if !for_query_generation
-                && edge.symbol.is_some()
-                && edge.symbol.unwrap() % 2 == expected_start_nodes_modulo
-                && self
-                    .metadata
-                    .get(&edge.from)
-                    .and_then(|m| Some(m.is_real && !potential_virtuals.contains(&m.name)))
-                    .unwrap_or(false)
-            {
-                if inverse_graph {
-                    start_nodes.insert(edge.to);
-                } else {
-                    start_nodes.insert(edge.from);
-                }
             }
             if i % WRITE_ONCE_IN_N == 0 {
                 progress(ProgressEvent::GeneratingArtifact {
@@ -264,14 +241,11 @@ impl ToDOT for CFLGraph {
                 })?;
             }
         }
-        if !start_nodes.is_empty() {
-            crate::debug!(
-                "Found {} start nodes when creating dot-ucfs file",
-                start_nodes.len()
-            );
-        }
-        for node in start_nodes {
-            dot_lines.push((None, None, node as To));
+        if !for_query_generation {
+            let start_nodes = collect_start_nodes(self, inverse_graph);
+            for node in start_nodes {
+                dot_lines.push((None, None, node as To));
+            }
         }
 
         Ok(dot_lines)

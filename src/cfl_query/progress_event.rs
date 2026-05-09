@@ -7,9 +7,11 @@ pub enum ProgressEvent {
     PreparingQueryGrammar { elapsed: Duration },
     RunningKotgll { elapsed: Duration },
     ModifyingDot { elapsed: Duration },
+    ModifyingG { elapsed: Duration },
     ParsingOutput { elapsed: Duration },
     KotGllDone { elapsed: Duration },
     UcfsDone { elapsed: Duration },
+    CfgBenchDone { elapsed: Duration },
 }
 
 impl fmt::Display for ProgressEvent {
@@ -24,6 +26,9 @@ impl fmt::Display for ProgressEvent {
             ProgressEvent::ModifyingDot { .. } => {
                 write!(f, "Modifying DOT file")
             }
+            ProgressEvent::ModifyingG { .. } => {
+                write!(f, "Modifying G file")
+            }
             ProgressEvent::ParsingOutput { .. } => {
                 write!(f, "Parsing KotGLL output")
             }
@@ -32,6 +37,9 @@ impl fmt::Display for ProgressEvent {
             }
             ProgressEvent::UcfsDone { .. } => {
                 write!(f, "UCFS query grammar generated")
+            }
+            ProgressEvent::CfgBenchDone { .. } => {
+                write!(f, "CFG_bench query graph generated")
             }
         }
     }
@@ -52,25 +60,23 @@ impl IOProgressEvent for ProgressEvent {
                 progress: 0.25,
                 objects_handled: None,
             },
-            ProgressEvent::ModifyingDot { elapsed } => ProgressState {
-                is_final: false,
-                elapsed: *elapsed,
-                progress: 0.5,
-                objects_handled: None,
-            },
+            ProgressEvent::ModifyingDot { elapsed } | ProgressEvent::ModifyingG { elapsed } => {
+                ProgressState {
+                    is_final: false,
+                    elapsed: *elapsed,
+                    progress: 0.5,
+                    objects_handled: None,
+                }
+            }
             ProgressEvent::ParsingOutput { elapsed } => ProgressState {
                 is_final: false,
                 elapsed: *elapsed,
                 progress: 0.75,
                 objects_handled: None,
             },
-            ProgressEvent::KotGllDone { elapsed } => ProgressState {
-                is_final: true,
-                elapsed: *elapsed,
-                progress: 1.0,
-                objects_handled: None,
-            },
-            ProgressEvent::UcfsDone { elapsed } => ProgressState {
+            ProgressEvent::KotGllDone { elapsed }
+            | ProgressEvent::UcfsDone { elapsed }
+            | ProgressEvent::CfgBenchDone { elapsed } => ProgressState {
                 is_final: true,
                 elapsed: *elapsed,
                 progress: 1.0,

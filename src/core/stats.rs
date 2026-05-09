@@ -11,19 +11,20 @@ pub struct StackGraphStats {
 }
 
 #[derive(Serialize, Default)]
+pub struct CFLGrammarStats {
+    pub path: String,
+    pub file_size: u64,
+    pub rules: u32,
+}
+
+#[derive(Serialize, Default)]
 pub struct CFLGraphStats {
     pub path: String,
     pub file_size: u64,
     pub built_in: u64,
     pub vertices: usize,
     pub edges: usize,
-}
-
-#[derive(Serialize, Default)]
-pub struct CFLGrammarStats {
-    pub path: String,
-    pub file_size: u64,
-    pub rules: u32,
+    pub grammar: CFLGrammarStats,
 }
 
 #[derive(Serialize)]
@@ -59,6 +60,5 @@ pub struct Stats {
     pub stack_graph: StackGraphStats,
     pub cfl_graph: CFLGraphStats,
     pub cfl_graph_simplified: CFLGraphStats,
-    pub cfl_grammar: CFLGrammarStats,
     pub queries: Vec<QueryStats>,
 }

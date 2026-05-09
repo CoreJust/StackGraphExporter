@@ -8,6 +8,8 @@ mod grammar_cnf_cfg;
 mod grammar_kt;
 mod grammar_kt_pieces;
 mod progress_event;
+mod start_nodes_collector;
+mod virtual_rules_indices_splitter;
 
 pub use csv::ToCSV;
 pub use dot::ToDOT;

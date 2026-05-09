@@ -2,7 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+
 use super::artifact_type::ArtifactType;
+use crate::cfl_query::cfg_bench_query;
 use crate::{
     artifacts::*,
     cfl_builder::{convert_to_cfl, SimplificationOptions},
@@ -22,6 +27,7 @@ pub struct Engine {
     pub remove_unsupported: bool,
     pub kotgll_enabled: bool,
     pub ucfs_enabled: bool,
+    pub cfg_bench_enabled: bool,
     pub all_symbols: bool,
     pub inverse: bool,
     pub simplification_options: SimplificationOptions,
@@ -96,6 +102,7 @@ impl Engine {
             language,
             kotgll_enabled: args.kotgll,
             ucfs_enabled: args.ucfs,
+            cfg_bench_enabled: args.cfg_bench,
             all_symbols: args.all_symbols,
             inverse: args.inverse,
             simplification_options: SimplificationOptions::make(
@@ -216,7 +223,7 @@ impl Engine {
                 cfl_stats.built_in = built_in.as_millis() as u64;
                 cfl_stats.vertices = vertices_count as usize;
                 cfl_stats.edges = graph.edges.len();
-                self.stats.cfl_grammar.rules = graph.cfl_push_pop_rules_count * 2 + 1;
+                cfl_stats.grammar.rules = graph.cfl_push_pop_rules_count * 2 + 1;
                 Some(graph)
             };
             self.used_simplification_options = simplify;
@@ -248,10 +255,12 @@ impl Engine {
         let ctx = self.ensure_context()?;
         let mut renderer = ProgressRenderer::new();
         let refs = ctx.find_reference_nodes(None, |e| renderer.render(&e))?;
-        let refs = refs
+        let mut refs = refs
             .into_iter()
             .filter(|r| self.nodes_with_partials.contains(&r))
             .collect::<Vec<_>>();
+        let mut rng = StdRng::seed_from_u64(42);
+        refs.shuffle(&mut rng);
         let mut result = Vec::new();
         let ctx = self.ensure_context()?;
         let start = Instant::now();
@@ -486,6 +495,31 @@ impl Engine {
         )
     }
 
+    pub fn generate_cfg_bench_query(
+        &mut self,
+        symbol: &str,
+        indices: &[u32],
+    ) -> Result<(PathBuf, PathBuf)> {
+        if !self.cfg_bench_enabled {
+            return Err(Error::Internal("CFG_bench backend not enabled".into()));
+        }
+        let cnf_path = self.generate_artifact_or_get_cached(ArtifactType::CnfCfg, true)?;
+        let g_path = self.generate_artifact_or_get_cached(ArtifactType::GCfg, true)?;
+        let sg_symbol_index = self
+            .ensure_context()?
+            .sggraph
+            .symbols
+            .iter()
+            .position(|sym| sym.name == symbol)
+            .expect("No such symbol") as SGSymbolIndex;
+        let rule_index = self.rule_index_of_symbol(sg_symbol_index);
+        let mut renderer = ProgressRenderer::new();
+        cfg_bench_query(&cnf_path, &g_path, rule_index, indices, |e| {
+            renderer.render(&e)
+        })?;
+        Ok((g_path, cnf_path))
+    }
+
     fn generate_artifact_or_get_cached(
         &mut self,
         artifact: ArtifactType,
@@ -552,9 +586,13 @@ impl Engine {
                     inverse,
                     |e| renderer.render(&e),
                 )?;
-                self.stats.cfl_grammar.path = path.display().to_string();
-                self.stats.cfl_grammar.file_size =
-                    std::fs::metadata(&self.stats.cfl_grammar.path)?.len();
+                let cfl_stats = if self.simplification_options.simplify {
+                    &mut self.stats.cfl_graph_simplified
+                } else {
+                    &mut self.stats.cfl_graph
+                };
+                cfl_stats.grammar.path = path.display().to_string();
+                cfl_stats.grammar.file_size = std::fs::metadata(&cfl_stats.grammar.path)?.len();
             }
             ArtifactType::Json => {
                 let serializable = self.stack_graph().to_serializable();
@@ -563,18 +601,30 @@ impl Engine {
             }
             ArtifactType::G => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromLabelTo, false, inverse)?;
+                cfl.write_to_g_file(
+                    &path,
+                    for_query_generation,
+                    GOrder::FromLabelTo,
+                    false,
+                    inverse,
+                )?;
             }
             ArtifactType::GCfg => {
                 let cfl = self.ensure_cfl_graph()?;
-                cfl.write_to_g_file(&path, GOrder::FromToLabel, true, inverse)?;
+                cfl.write_to_g_file(
+                    &path,
+                    for_query_generation,
+                    GOrder::FromToLabel,
+                    true,
+                    inverse,
+                )?;
             }
             ArtifactType::Cnf => {
                 let cfl = self.ensure_cfl_graph()?;
                 cfl.write_to_cnf_file(&path, inverse)?;
             }
             ArtifactType::CnfCfg => {
-                write_to_cnf_cfg_file(&path, inverse)?;
+                write_to_cnf_cfg_file(&path)?; // Graph has its symbols swapped instead
             }
         }
         Ok(path)

@@ -222,9 +222,11 @@ impl CommandProcessor {
         println!("Enter index to resolve (or 'a' for all, empty to cancel):");
         let choice = crate::io::read_line("> ")?;
         if choice.is_empty() {
-            return Ok(None);
-        }
-        if choice == "a" {
+            Ok(None)
+        } else if choice == "a" {
+            if self.engine.kotgll_enabled {
+                crate::error!("KotGLL query not supported for node-based queries (symbol needed)");
+            }
             Ok(Some(refs))
         } else {
             match choice.parse::<usize>() {
@@ -282,6 +284,16 @@ impl CommandProcessor {
             crate::info!("UCFS query DOT generated at {}", dot_path.display());
             crate::info!("UCFS query grammar generated at {}", grammar_path.display());
         }
+        if self.engine.cfg_bench_enabled {
+            let cfl_indices = self.engine.map_reference_nodes_to_cfl(indices)?;
+            let (g_path, grammar_path) =
+                self.engine.generate_cfg_bench_query(symbol, &cfl_indices)?;
+            crate::info!("CFG_bench query G generated at {}", g_path.display());
+            crate::info!(
+                "CFG_bench query grammar generated at {}",
+                grammar_path.display()
+            );
+        }
 
         Ok(())
     }
@@ -297,7 +309,7 @@ impl CommandProcessor {
         }
 
         if self.engine.kotgll_enabled {
-            crate::warn!("KotGLL query not supported for node-based queries (symbol needed)");
+            crate::error!("KotGLL query not supported for node-based queries (symbol needed)");
         }
         if self.engine.ucfs_enabled {
             let indices_u32 = vec![node as u32];
@@ -360,25 +372,31 @@ impl CommandProcessor {
         use std::fs::File;
         use std::io::Write;
 
-        self.engine.generate_artifact(ArtifactType::Kt, true)?;
         let old_simplification_options = std::mem::replace(
             &mut self.engine.simplification_options,
             SimplificationOptions::no_simpify(),
         );
         self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
+        self.engine.generate_artifact(ArtifactType::Kt, true)?;
         self.engine.simplification_options = if old_simplification_options.simplify {
             old_simplification_options
         } else {
             SimplificationOptions::simpify()
         };
         let nonsimplified_cfl_path = self.engine.output_path(ArtifactType::DotUcfs);
+        let nonsimplified_cfl_grammar_path = self.engine.output_path(ArtifactType::Kt);
         self.engine.output_overrides.insert(
             ArtifactType::DotUcfs,
             Self::with_file_name_appended(&nonsimplified_cfl_path, "_simplified"),
         );
+        self.engine.output_overrides.insert(
+            ArtifactType::Kt,
+            Self::with_file_name_appended(&nonsimplified_cfl_grammar_path, "_simplified"),
+        );
         let unsimplified_sg_symbol_to_cfl_rule_mapping =
             self.engine.grab_rule_index_of_symbol_mapping();
         self.engine.generate_artifact(ArtifactType::DotUcfs, true)?;
+        self.engine.generate_artifact(ArtifactType::Kt, true)?;
 
         let resolved_symbols = self.pick_symbols(count)?;
         self.engine.stats.queries = Vec::with_capacity(resolved_symbols.len());

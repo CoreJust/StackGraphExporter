@@ -8,6 +8,7 @@ use rand::SeedableRng;
 
 use super::artifact_type::ArtifactType;
 use crate::cfl_query::cfg_bench_query;
+use crate::core::CFLPath;
 use crate::{
     artifacts::*,
     cfl_builder::{convert_to_cfl, SimplificationOptions},
@@ -435,6 +436,56 @@ impl Engine {
         )))
     }
 
+    fn verify_query_results(&mut self, results: HashSet<CFLPath>) -> Result<()> {
+        let sg_start_indices = {
+            let cfl = self.cfl_graph.as_ref().unwrap();
+            results
+                .iter()
+                .map(|path| cfl.metadata[&path.from].sg_node_index)
+                .collect::<Vec<_>>()
+        };
+        let mut renderer = ProgressRenderer::new();
+        let expected_sg_end_indices = {
+            let ctx = self.ensure_context()?;
+            sg_start_indices
+                .iter()
+                .map(|i| {
+                    ctx.resolve_reference(*i, false, |e| renderer.render(&e))
+                        .expect("Failed to resolve reference")
+                        .defs
+                        .iter()
+                        .map(|d| d.sg_node_index)
+                        .collect::<Vec<_>>()
+                })
+                .flatten()
+                .collect::<HashSet<_>>()
+        };
+        let expected_cfl_end_indices = {
+            let cfl = self.cfl_graph.as_ref().unwrap();
+            let end_in_indices = expected_sg_end_indices
+                .iter()
+                .map(|i| cfl.metadata[&i].sg_node_index)
+                .collect::<HashSet<_>>();
+            cfl.edges
+                .iter()
+                .filter_map(|e| {
+                    if end_in_indices.contains(&e.from) {
+                        Some(e.to)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashSet<_>>()
+        };
+        let actual_cfl_end_indices = results.into_iter().map(|p| p.to).collect::<HashSet<_>>();
+        if actual_cfl_end_indices == expected_cfl_end_indices {
+            crate::success!("Verification successful");
+        } else {
+            crate::error!("Verification failed!\nKotGLL end indices are: {actual_cfl_end_indices:?}\nStack graphs end indices are: {expected_cfl_end_indices:?}");
+        }
+        Ok(())
+    }
+
     pub fn kotgll_query(&mut self, symbol: &str) -> Result<()> {
         if !self.kotgll_enabled {
             return Err(Error::Internal("KotGLL backend not enabled".into()));
@@ -451,7 +502,7 @@ impl Engine {
             .expect("No such symbol") as SGSymbolIndex;
         let rule_index = self.rule_index_of_symbol(sg_symbol_index);
         let mut renderer = ProgressRenderer::new();
-        kotgll_query(
+        let results = kotgll_query(
             self.kotgll_path
                 .as_ref()
                 .expect("No KotGLL path was provided; add --kotgll-path with path to JAR"),
@@ -461,8 +512,10 @@ impl Engine {
             rule_index,
             self.sppf,
             |e| renderer.render(&e),
-        )?;
-        Ok(())
+        )?
+        .into_iter()
+        .collect::<HashSet<_>>();
+        self.verify_query_results(results)
     }
 
     pub fn generate_ucfs_query(

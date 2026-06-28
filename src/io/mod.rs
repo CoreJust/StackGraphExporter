@@ -1,3 +1,4 @@
+pub mod measure;
 mod progress_event;
 mod read_line;
 pub mod term;

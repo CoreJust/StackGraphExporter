@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use fixedbitset::FixedBitSet;
 
 use crate::{
     cfl_builder::{
@@ -9,7 +9,6 @@ use crate::{
     error::Result,
 };
 
-// Note: standalone nodes are ignored since such nodes are to be removed anyways
 fn purge_weak_components_if<F, CallBack>(
     tgraph: &mut TGraph,
     simplification_stats: &mut SimplificationStats,
@@ -26,8 +25,8 @@ where
     let mut visited = vec![false; n];
     let mut removed = 0;
 
-    let mut stack = Vec::new();
-    let mut component = Vec::new();
+    let mut stack = Vec::with_capacity(1024);
+    let mut component = Vec::with_capacity(1024);
 
     for start_idx in 0..n {
         progress_monitor.emit_simplification_nth("Purging weak components", start_idx)?;
@@ -46,17 +45,8 @@ where
 
         while let Some(current) = stack.pop() {
             component.push(current);
-
-            let neighbours: Vec<TNodeIndex> = {
-                let node = &tgraph.nodes[current as usize];
-                node.incoming
-                    .iter()
-                    .chain(node.outcoming.iter())
-                    .copied()
-                    .collect()
-            };
-
-            for nb in neighbours {
+            let node = &tgraph.nodes[current as usize];
+            for &nb in node.incoming.iter().chain(node.outcoming.iter()) {
                 let nb_usize = nb as usize;
                 if !visited[nb_usize] {
                     visited[nb_usize] = true;
@@ -80,8 +70,6 @@ where
     Ok(())
 }
 
-// There are no paths if the component has not a single pair pshX ppX,
-// where both Xs are real.
 pub fn remove_weak_components_without_paths<F>(
     tgraph: &mut TGraph,
     progress_monitor: &mut ProgressMonitor<F>,
@@ -90,28 +78,47 @@ pub fn remove_weak_components_without_paths<F>(
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
+    let n = tgraph.nodes.len();
+
+    let mut node_info: Vec<Option<(bool, usize)>> = vec![None; n];
+    let mut max_rule = 0;
+    for (i, node) in tgraph.nodes.iter().enumerate() {
+        if node.is_real() {
+            let rule = node.rule().expect("Cannot be eps") as usize;
+            node_info[i] = Some((node.is_push(), rule));
+            if rule > max_rule {
+                max_rule = rule;
+            }
+        }
+    }
+
+    // Bitsets reused across components
+    let mut push_bits = FixedBitSet::with_capacity(max_rule + 1);
+    let mut pop_bits = FixedBitSet::with_capacity(max_rule + 1);
+
     purge_weak_components_if(
         tgraph,
         simplification_stats,
         progress_monitor,
-        |tgraph, nodes| {
-            let mut real_pushes = HashSet::new();
-            let mut real_pops = HashSet::new();
-            !nodes.iter().map(|&i| &tgraph.nodes[i as usize]).any(|n| {
-                // Check if the node is real and has pair
-                if !n.is_real() {
-                    false
-                } else {
-                    let rule = n.rule().expect("Cannot be eps");
-                    if n.is_push() {
-                        real_pushes.insert(rule);
-                        real_pops.contains(&rule)
+        |_tgraph, nodes| {
+            push_bits.clear();
+            pop_bits.clear();
+            for &idx in nodes {
+                if let Some((is_push, rule)) = node_info[idx as usize] {
+                    if is_push {
+                        if pop_bits.contains(rule) {
+                            return false;
+                        }
+                        push_bits.insert(rule);
                     } else {
-                        real_pops.insert(rule);
-                        real_pushes.contains(&rule)
+                        if push_bits.contains(rule) {
+                            return false;
+                        }
+                        pop_bits.insert(rule);
                     }
                 }
-            })
+            }
+            true
         },
     )
 }

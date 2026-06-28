@@ -14,6 +14,7 @@ pub struct SimplificationOptions {
     pub simplify: bool,
     pub transient_simplification_iterations: Option<usize>,
     pub eps_removal_tolerance: isize,
+    pub dont_preserve_node_mapping: bool,
 
     // The following might affect performance signigicantly!
     pub remove_unreachable: ReachabilityTestMode,
@@ -27,6 +28,7 @@ impl SimplificationOptions {
             simplify: false,
             transient_simplification_iterations: None,
             eps_removal_tolerance: DEFAULT_EPS_REMOVAL_TOLERANCE,
+            dont_preserve_node_mapping: false,
             remove_unreachable: ReachabilityTestMode::None,
         }
     }
@@ -36,6 +38,7 @@ impl SimplificationOptions {
             simplify: true,
             transient_simplification_iterations: Some(2),
             eps_removal_tolerance: DEFAULT_EPS_REMOVAL_TOLERANCE,
+            dont_preserve_node_mapping: false,
             remove_unreachable: ReachabilityTestMode::Custom(3),
         }
     }
@@ -44,6 +47,8 @@ impl SimplificationOptions {
         simplify: bool,
         max_transient_simplification_iterations: Option<usize>,
         eps_removal_tolerance: Option<isize>,
+        de_epsilon: bool,
+        dont_preserve_node_mapping: bool,
         remove_unreachable_trivial: bool,
         remove_unreachable: bool,
         remove_unreachable_with_front: bool,
@@ -58,10 +63,18 @@ impl SimplificationOptions {
                 remove_unreachable_deep.unwrap()
             )));
         }
+        if de_epsilon && eps_removal_tolerance.is_some() {
+            return Err(Error::InvalidArgument(format!("de-epsilon means eps-tolerance=INF, it is not compatible with explicit eps-tolerance")));
+        }
         Ok(Self {
             simplify,
             transient_simplification_iterations: max_transient_simplification_iterations,
-            eps_removal_tolerance: eps_removal_tolerance.unwrap_or(DEFAULT_EPS_REMOVAL_TOLERANCE),
+            eps_removal_tolerance: if de_epsilon {
+                isize::MAX
+            } else {
+                eps_removal_tolerance.unwrap_or(DEFAULT_EPS_REMOVAL_TOLERANCE)
+            },
+            dont_preserve_node_mapping,
             remove_unreachable: if remove_unreachable_with_front {
                 ReachabilityTestMode::Double
             } else if remove_unreachable {

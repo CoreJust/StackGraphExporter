@@ -1,3 +1,4 @@
+mod complete_eps_removal;
 mod invalid_end_nodes_removal;
 mod invalid_pairs_removal;
 mod reachability_test;

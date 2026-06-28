@@ -1,6 +1,8 @@
 use super::bitset::BitSet;
 use crate::core::CFLRuleIndex;
 
+use core::arch::x86_64::*;
+
 pub trait ReachabilityState: Send + Clone {
     // Monotonoues means that as propagation continues,
     // the state can only accumulate more reachables.
@@ -100,6 +102,7 @@ impl<T: BitSet> ReachabilityState for SingleReachabilityState<T> {
 }
 
 #[derive(Clone)]
+#[allow(unused)]
 pub struct DoubleReachabilityState<T: BitSet> {
     deep_stack: T,               // Emulates stack depths of 2 and more
     front: T, // Openings that can reach here immediately, solely by epsilon nodes
@@ -147,27 +150,21 @@ impl<T: BitSet> ReachabilityState for DoubleReachabilityState<T> {
 
     fn merge_with(&mut self, invader: &Self) -> bool {
         if let Some(_) = self.opening {
-            // No front can reach an opening node - it overwrites it with itself
-            let changed_deep = self.deep_stack.unite_with(&invader.deep_stack);
-            // Old front advances to the deep_stack due to new push
-            let changed_from_front = self.deep_stack.unite_with(&invader.front);
-            changed_from_front || changed_deep
+            // Push node: combine invader.deep_stack and invader.front into deep_stack
+            self.deep_stack
+                .unite_with_two(&invader.deep_stack, &invader.front)
         } else if let Some(closing) = self.closing {
-            // If front has no openning corresponding to this closing,
-            // then it cannot pass since a path will not be formed
-            if invader.front.contains(closing) == false {
+            // closing branch unchanged
+            if !invader.front.contains(closing) {
                 false
             } else {
-                // The front will not propagate further, but we have to make sure this
-                // node won't be pruned.
                 self.is_reached_by_opening = true;
                 let changed_deep = self.deep_stack.unite_with(&invader.deep_stack);
-                // We have no information about the front after crossing the
-                // closing node, it can be any opening from the deeper stack
                 let changed_front = self.front.unite_with(&invader.deep_stack);
                 changed_deep || changed_front
             }
         } else {
+            // ordinary node unchanged
             let changed_deep = self.deep_stack.unite_with(&invader.deep_stack);
             let changed_front = self.front.unite_with(&invader.front);
             changed_deep || changed_front
@@ -284,6 +281,222 @@ impl<T: BitSet, const K: usize> ReachabilityState for KReachabilityState<T, K> {
                 .iter()
                 .zip(opposite.fronts.iter())
                 .all(|(front, opposite_front)| front.is_disjoint(opposite_front))
+            && !self.is_reached_by_opening
+            && !opposite.is_reached_by_opening
+    }
+}
+
+// Store deep_stack and front in one Vec<usize>: first half = deep_stack, second half = front.
+#[derive(Clone)]
+pub struct PackedDoubleReachabilityState {
+    bits: Vec<usize>, // length = 2 * words_per_set
+    is_reached_by_opening: bool,
+    opening: Option<CFLRuleIndex>,
+    closing: Option<CFLRuleIndex>,
+    words_per_set: usize, // number of usize words per bitset
+}
+
+impl PackedDoubleReachabilityState {
+    #[inline]
+    fn deep_mut(&mut self) -> &mut [usize] {
+        &mut self.bits[..self.words_per_set]
+    }
+    #[inline]
+    fn front_mut(&mut self) -> &mut [usize] {
+        &mut self.bits[self.words_per_set..]
+    }
+
+    fn unite_deep_with_two(dst: &mut [usize], a: &[usize], b: &[usize]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        if std::is_x86_feature_detected!("avx2") {
+            return unsafe { Self::unite_deep_two_avx2(dst, a, b) };
+        }
+        Self::unite_scalar(dst, |i| a[i] | b[i])
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn unite_deep_two_avx2(dst: &mut [usize], a: &[usize], b: &[usize]) -> bool {
+        let mut changed = false;
+        let mut i = 0;
+        let len = dst.len();
+        while i + 4 <= len {
+            let d = _mm256_loadu_si256(dst.as_ptr().add(i) as *const __m256i);
+            let av = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
+            let bv = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
+            let combined = _mm256_or_si256(av, bv);
+            let newv = _mm256_or_si256(d, combined);
+            _mm256_storeu_si256(dst.as_mut_ptr().add(i) as *mut __m256i, newv);
+            if _mm256_testz_si256(_mm256_xor_si256(d, newv), _mm256_xor_si256(d, newv)) == 0 {
+                changed = true;
+            }
+            i += 4;
+        }
+        while i < len {
+            let old = dst[i];
+            let new = old | a[i] | b[i];
+            if new != old {
+                dst[i] = new;
+                changed = true;
+            }
+            i += 1;
+        }
+        changed
+    }
+
+    fn unite_scalar<F: Fn(usize) -> usize>(dst: &mut [usize], f: F) -> bool {
+        let mut changed = false;
+        for i in 0..dst.len() {
+            let old = dst[i];
+            let new = old | f(i);
+            if new != old {
+                dst[i] = new;
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn unite_deep_with_one(dst: &mut [usize], src: &[usize]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        if std::is_x86_feature_detected!("avx2") {
+            return unsafe { Self::unite_avx2(dst, src) };
+        }
+        Self::unite_scalar(dst, |i| src[i])
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn unite_avx2(dst: &mut [usize], src: &[usize]) -> bool {
+        let mut changed = false;
+        let mut i = 0;
+        let len = dst.len();
+        while i + 4 <= len {
+            let d = _mm256_loadu_si256(dst.as_ptr().add(i) as *const __m256i);
+            let s = _mm256_loadu_si256(src.as_ptr().add(i) as *const __m256i);
+            let newv = _mm256_or_si256(d, s);
+            _mm256_storeu_si256(dst.as_mut_ptr().add(i) as *mut __m256i, newv);
+            if _mm256_testz_si256(_mm256_xor_si256(d, newv), _mm256_xor_si256(d, newv)) == 0 {
+                changed = true;
+            }
+            i += 4;
+        }
+        while i < len {
+            let old = dst[i];
+            let new = old | src[i];
+            if new != old {
+                dst[i] = new;
+                changed = true;
+            }
+            i += 1;
+        }
+        changed
+    }
+}
+
+impl ReachabilityState for PackedDoubleReachabilityState {
+    const MONOTONOUS: bool = false;
+
+    fn empty(size: u32) -> Self {
+        let words = (size as usize + usize::BITS as usize - 1) / usize::BITS as usize;
+        Self {
+            bits: vec![0; words * 2],
+            is_reached_by_opening: false,
+            opening: None,
+            closing: None,
+            words_per_set: words,
+        }
+    }
+
+    fn from_opening(size: u32, opening: CFLRuleIndex) -> Self {
+        let words = (size as usize + usize::BITS as usize - 1) / usize::BITS as usize;
+        let mut bits = vec![0; words * 2];
+        let word_idx = (opening as usize) / (usize::BITS as usize);
+        let bit = (opening as usize) % (usize::BITS as usize);
+        bits[words + word_idx] = 1 << bit;
+        Self {
+            bits,
+            is_reached_by_opening: false,
+            opening: Some(opening),
+            closing: None,
+            words_per_set: words,
+        }
+    }
+
+    fn from_closing(size: u32, closing: CFLRuleIndex) -> Self {
+        let words = (size as usize + usize::BITS as usize - 1) / usize::BITS as usize;
+        Self {
+            bits: vec![0; words * 2],
+            is_reached_by_opening: false,
+            opening: None,
+            closing: Some(closing),
+            words_per_set: words,
+        }
+    }
+
+    fn from_scc(_: u32, _: &[CFLRuleIndex], _: &[CFLRuleIndex]) -> Self {
+        panic!("PackedDoubleReachabilityState does not use SCC condensation");
+    }
+
+    fn merge_with(&mut self, invader: &Self) -> bool {
+        debug_assert_eq!(self.words_per_set, invader.words_per_set);
+        let words = self.words_per_set;
+
+        if self.opening.is_some() {
+            Self::unite_deep_with_two(
+                self.deep_mut(),
+                &invader.bits[..words],
+                &invader.bits[words..],
+            )
+        } else if let Some(closing) = self.closing {
+            let front_invader = &invader.bits[words..];
+            let closing_word = (closing as usize) / (usize::BITS as usize);
+            let closing_bit = 1 << ((closing as usize) % (usize::BITS as usize));
+            if (front_invader[closing_word] & closing_bit) == 0 {
+                false
+            } else {
+                if !self.is_reached_by_opening {
+                    self.is_reached_by_opening = true;
+                    let mut changed =
+                        Self::unite_deep_with_one(self.deep_mut(), &invader.bits[..words]);
+                    changed |= Self::unite_deep_with_one(self.front_mut(), &invader.bits[..words]);
+                    changed
+                } else {
+                    let mut changed =
+                        Self::unite_deep_with_one(self.deep_mut(), &invader.bits[..words]);
+                    changed |= Self::unite_deep_with_one(self.front_mut(), &invader.bits[..words]);
+                    changed
+                }
+            }
+        } else {
+            let changed;
+            let total = words * 2;
+            #[cfg(target_arch = "x86_64")]
+            if std::is_x86_feature_detected!("avx2") {
+                unsafe {
+                    changed = Self::unite_avx2(&mut self.bits[..total], &invader.bits[..total]);
+                }
+            } else {
+                changed = Self::unite_scalar(&mut self.bits[..total], |i| invader.bits[i]);
+            }
+            changed
+        }
+    }
+
+    fn unreachable_if_opposite(&self, opposite: &Self) -> bool {
+        let words = self.words_per_set;
+        let deep_self = &self.bits[..words];
+        let front_self = &self.bits[words..];
+        let deep_opp = &opposite.bits[..words];
+        let front_opp = &opposite.bits[words..];
+        (deep_self
+            .iter()
+            .zip(deep_opp.iter())
+            .all(|(a, b)| a & b == 0))
+            && (front_self
+                .iter()
+                .zip(front_opp.iter())
+                .all(|(a, b)| a & b == 0))
             && !self.is_reached_by_opening
             && !opposite.is_reached_by_opening
     }

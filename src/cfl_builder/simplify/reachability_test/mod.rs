@@ -1,5 +1,4 @@
 mod bitset;
-mod nodes_marking_progress;
 mod reachability_state;
 mod scc;
 mod unreachable_removal;

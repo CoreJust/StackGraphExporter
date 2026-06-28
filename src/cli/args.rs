@@ -51,6 +51,10 @@ pub struct OpenArgs {
     pub max_simplification_iterations: Option<usize>,
     #[arg(long, alias = "eps-tolerance")]
     pub eps_removal_tolerance: Option<isize>,
+    #[arg(long, alias = "de-eps", alias = "deps")]
+    pub de_epsilon: bool,
+    #[arg(long, alias = "no-mapping", alias = "nomap")]
+    pub dont_preserve_node_mapping: bool,
     #[arg(long)]
     pub remove_unreachable_trivial: bool,
     #[arg(long)]

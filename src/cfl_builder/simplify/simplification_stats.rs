@@ -8,8 +8,8 @@ pub struct SimplificationStats {
     pub total_rules_removed: usize,
     pub invalid_pairs_removed: usize,
     pub invalid_end_nodes_removed: usize,
-    pub trivial_eps_removed: usize,
-    pub trivial_eps_removal_iterations: usize,
+    pub eps_removed: usize,
+    pub eps_removal_iterations: usize,
     pub weak_components_purged: usize,
     pub weak_components_nodes_purged: usize,
     pub unreachable_nodes_removed: usize,
@@ -27,6 +27,7 @@ impl PartialEq for SimplificationStats {
     fn eq(&self, other: &Self) -> bool {
         self.total_nodes_removed == other.total_nodes_removed
             && self.total_edges_removed == other.total_edges_removed
+            && self.unreachable_nodes_removed == other.unreachable_nodes_removed
     }
 }
 
@@ -39,7 +40,7 @@ impl Display for SimplificationStats {
 \tTotal removed: {} nodes, {} edges, and {} rules
 \tInvalid pairs removed: {}
 \tInvalid end nodes removed: {}
-\tTrivial eps removed: {} (over {} iterations in total)
+\tEps removed: {} (over {} iterations in total)
 \tWeak components purged: {} ({} nodes)
 \tUnreachable nodes removed: {}",
             self.iterations,
@@ -48,8 +49,8 @@ impl Display for SimplificationStats {
             self.total_rules_removed,
             self.invalid_pairs_removed,
             self.invalid_end_nodes_removed,
-            self.trivial_eps_removed,
-            self.trivial_eps_removal_iterations,
+            self.eps_removed,
+            self.eps_removal_iterations,
             self.weak_components_purged,
             self.weak_components_nodes_purged,
             self.unreachable_nodes_removed,

@@ -110,6 +110,8 @@ impl Engine {
                 args.simplify,
                 args.max_simplification_iterations,
                 args.eps_removal_tolerance,
+                args.de_epsilon,
+                args.dont_preserve_node_mapping,
                 args.remove_unreachable_trivial,
                 args.remove_unreachable,
                 args.remove_unreachable_with_front,
@@ -211,9 +213,12 @@ impl Engine {
                     .map(|e| e.from.max(e.to))
                     .max()
                     .unwrap_or(0);
+                let symbol_edges_count = graph.edges.iter().filter(|e| e.symbol.is_some()).count();
                 crate::info!(
-                    "Generated CFL graph size: {vertices_count} vertices, {} edges; {} rules",
+                    "Generated CFL graph size: {vertices_count} vertices, {} edges (of which {} have symbols and {} don't); {} rules",
                     graph.edges.len(),
+                    symbol_edges_count,
+                    graph.edges.len() - symbol_edges_count,
                     graph.cfl_push_pop_rules_count * 2 + 1,
                 );
                 let cfl_stats = if simplify.simplify {

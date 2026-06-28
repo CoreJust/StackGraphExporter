@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use fixedbitset::FixedBitSet;
 
 use super::{reachability_state::ReachabilityState, scc::condense_with_scc};
@@ -7,7 +5,6 @@ use crate::{
     cfl_builder::{
         progress_event::{ProgressEvent, ProgressMonitor},
         simplify::{
-            reachability_test::nodes_marking_progress::{BranchProgress, ProgressMsg},
             simplification_stats::SimplificationStats,
             transient_graph_walker::{BackwardTGraphWalker, ForwardTGraphWalker, TGraphWalker},
         },
@@ -17,35 +14,34 @@ use crate::{
 };
 
 struct NodeQueue {
-    queue: VecDeque<TNodeIndex>,
-    queued: FixedBitSet,
+    stack: Vec<TNodeIndex>,
+    in_stack: FixedBitSet,
 }
 
 impl NodeQueue {
     fn new(size: usize) -> Self {
         Self {
-            queue: VecDeque::new(),
-            queued: FixedBitSet::with_capacity(size),
+            stack: Vec::with_capacity(size / 10),
+            in_stack: FixedBitSet::with_capacity(size),
         }
     }
 
     fn push(&mut self, node: TNodeIndex) {
-        if !self.queued.contains(node as usize) {
-            self.queue.push_front(node);
-            self.queued.insert(node as usize);
+        if !self.in_stack.contains(node as usize) {
+            self.stack.push(node);
+            self.in_stack.insert(node as usize);
         }
     }
 
     fn pop(&mut self) -> Option<TNodeIndex> {
-        let result = self.queue.pop_back()?;
-        self.queued.remove(result as usize);
-        Some(result)
+        let node = self.stack.pop()?;
+        self.in_stack.remove(node as usize);
+        Some(node)
     }
 }
 
 fn mark_initial_nodes_reachability<State, Walker>(
     tgraph: &TGraph,
-    progress: &mut BranchProgress,
 ) -> Result<(Vec<State>, NodeQueue)>
 where
     State: ReachabilityState,
@@ -53,9 +49,7 @@ where
 {
     let mut states = Vec::with_capacity(tgraph.nodes.len());
     let mut queue = NodeQueue::new(tgraph.nodes.len());
-    progress.set_total(tgraph.nodes.len());
     for (i, n) in tgraph.nodes.iter().enumerate() {
-        progress.tick("Initializing nodes reachability", i);
         if let Some(rule) = Walker::as_opening(n) {
             states.push(State::from_opening(tgraph.cfl_push_pop_rules_count, rule));
             queue.push(i as TNodeIndex);
@@ -72,7 +66,6 @@ fn mark_initial_nodes_reachability_scc<State, Walker>(
     tgraph: &TGraph,
     condensed: &TGraph,
     mapping_back: &[Vec<TNodeIndex>],
-    progress: &mut BranchProgress,
 ) -> Result<(Vec<State>, NodeQueue)>
 where
     State: ReachabilityState,
@@ -82,21 +75,12 @@ where
     let mut states = Vec::with_capacity(scc_count);
     let mut queue = NodeQueue::new(scc_count);
 
-    progress.set_total(tgraph.nodes.len());
-    let mut processed_originals = 0usize;
-
     let mut openings = Vec::new();
     let mut closings = Vec::new();
     for (scc_idx, members) in mapping_back.iter().enumerate() {
         openings.clear();
         closings.clear();
         for &orig_node in members {
-            processed_originals += 1;
-            progress.tick(
-                "Initializing nodes reachability with SCC",
-                processed_originals,
-            );
-
             let node = &tgraph.nodes[orig_node as usize];
             if let Some(rule) = Walker::as_opening(node) {
                 openings.push(rule);
@@ -123,18 +107,12 @@ fn mark_nodes_reachability<State, Walker>(
     tgraph: &TGraph,
     mut state: Vec<State>,
     mut queue: NodeQueue,
-    progress: &mut BranchProgress,
 ) -> Result<Vec<State>>
 where
     State: ReachabilityState,
     Walker: TGraphWalker,
 {
-    let mut visited_nodes = 0usize;
     while let Some(current) = queue.pop() {
-        progress.tick("Marking nodes reachability", visited_nodes);
-        progress.set_total(visited_nodes + queue.queue.len());
-        visited_nodes += 1;
-
         let node = &tgraph.nodes[current as usize];
         let next = Walker::next_vertices(node);
         let (left, right) = state.split_at_mut(current as usize);
@@ -160,84 +138,64 @@ fn mark_nodes_reachability_maybe_scc<State, Walker>(
     tgraph: &TGraph,
     condensed: &Option<TGraph>,
     mapping_back: &[Vec<TNodeIndex>],
-    progress: &mut BranchProgress,
 ) -> Result<Vec<State>>
 where
     State: ReachabilityState,
     Walker: TGraphWalker,
 {
     if let Some(condensed) = condensed.as_ref() {
-        let (state, queue) = mark_initial_nodes_reachability_scc::<State, Walker>(
-            tgraph,
-            condensed,
-            mapping_back,
-            progress,
-        )?;
-        mark_nodes_reachability::<State, Walker>(condensed, state, queue, progress)
+        let (state, queue) =
+            mark_initial_nodes_reachability_scc::<State, Walker>(tgraph, condensed, mapping_back)?;
+        mark_nodes_reachability::<State, Walker>(condensed, state, queue)
     } else {
-        let (state, queue) = mark_initial_nodes_reachability::<State, Walker>(tgraph, progress)?;
-        mark_nodes_reachability::<State, Walker>(tgraph, state, queue, progress)
+        let (state, queue) = mark_initial_nodes_reachability::<State, Walker>(tgraph)?;
+        mark_nodes_reachability::<State, Walker>(tgraph, state, queue)
     }
 }
 
-fn compute_push_pop_reachability_parallel<State, F>(
+fn compute_push_pop_reachability_parallel<State>(
     tgraph: &TGraph,
     condensed: &Option<TGraph>,
     mapping_back: &[Vec<TNodeIndex>],
-    progress_monitor: &mut ProgressMonitor<F>,
 ) -> Result<(Vec<State>, Vec<State>)>
 where
     State: ReachabilityState + Send,
-    F: FnMut(ProgressEvent) -> Result<()>,
 {
     use std::sync::mpsc;
 
-    let (progress_tx, progress_rx) = mpsc::channel::<ProgressMsg>();
     let (result_tx, result_rx) = mpsc::channel::<(usize, Result<Vec<State>>)>();
 
     rayon::scope(|s| {
         // PUSH
         {
-            let tx = progress_tx.clone();
             let rtx = result_tx.clone();
             s.spawn(move |_| {
-                let mut p = BranchProgress::new(tx, 0);
                 let res = mark_nodes_reachability_maybe_scc::<State, ForwardTGraphWalker>(
                     tgraph,
                     condensed,
                     mapping_back,
-                    &mut p,
                 );
-                p.finish("Marking nodes reachability", 0);
                 let _ = rtx.send((0, res));
             });
         }
 
         // POP
         {
-            let tx = progress_tx.clone();
             let rtx = result_tx.clone();
             s.spawn(move |_| {
-                let mut p = BranchProgress::new(tx, 1);
                 let res = mark_nodes_reachability_maybe_scc::<State, BackwardTGraphWalker>(
                     tgraph,
                     condensed,
                     mapping_back,
-                    &mut p,
                 );
-                p.finish("Marking nodes reachability", 0);
                 let _ = rtx.send((1, res));
             });
         }
     });
 
-    drop(progress_tx);
     drop(result_tx);
 
     // MAIN THREAD: collect results
-    let mut totals = [0usize; 2];
-    let mut done = [0usize; 2];
-
     let mut results: [Option<Vec<State>>; 2] = [None, None];
     let mut errors: [Option<_>; 2] = [None, None];
 
@@ -251,26 +209,6 @@ where
             }
             remaining -= 1;
             continue;
-        }
-
-        match progress_rx.recv() {
-            Ok(msg) => match msg {
-                ProgressMsg::SetTotal { branch, total } => {
-                    totals[branch] = total;
-                }
-                ProgressMsg::Tick {
-                    branch,
-                    done: d,
-                    label,
-                } => {
-                    done[branch] = d;
-
-                    progress_monitor.stage_total = totals[0] + totals[1];
-                    progress_monitor.emit_simplification_nth(label, done[0] + done[1])?;
-                }
-                ProgressMsg::Finished { .. } => {}
-            },
-            Err(_) => break,
         }
     }
 
@@ -301,12 +239,8 @@ where
     } else {
         (None, Vec::new())
     };
-    let (push_reachable, pop_reachable) = compute_push_pop_reachability_parallel::<State, _>(
-        tgraph,
-        &condensed_tgraph,
-        &mapping_back,
-        progress_monitor,
-    )?;
+    let (push_reachable, pop_reachable) =
+        compute_push_pop_reachability_parallel::<State>(tgraph, &condensed_tgraph, &mapping_back)?;
     let walked_tgraph = condensed_tgraph.as_mut().unwrap_or(tgraph);
     progress_monitor.stage_total = walked_tgraph.nodes.len();
     for i in 0..walked_tgraph.nodes.len() {

@@ -20,6 +20,7 @@ use std::time::Duration;
 fn generate_out_indices<F>(
     src_nodes: &[TNode],
     rules_count: usize,
+    dont_preserve_node_mapping: bool,
     progress: &mut ProgressMonitor<F>,
 ) -> Result<HashMap<TNodeIndex, CFLNodeIndex>>
 where
@@ -34,7 +35,12 @@ where
         progress.emit_nth(i, |v| ProgressEvent::BuildingOutIds(v))?;
         // TODO: check for cases when there are several definition nodes with a single edge and all of them end in the same node.
         // Then we cannot attach the symbol to all the edges lest we want to lose some pairs in query results.
-        if src_node.is_real() && src_node.outcoming.len() != 1 {
+        let needs_new_out_node = if dont_preserve_node_mapping {
+            src_node.is_real() && src_node.is_pop() && src_node.outcoming.is_empty()
+        } else {
+            src_node.is_real() && src_node.is_pop() && src_node.outcoming.len() != 1
+        };
+        if needs_new_out_node {
             out_indices.insert(
                 i as TNodeIndex,
                 if src_node.outcoming.is_empty() {
@@ -137,13 +143,18 @@ where
     Ok(())
 }
 
-fn generate_edges<F>(tgraph: &TGraph, progress: &mut ProgressMonitor<F>) -> Result<Vec<CFLEdge>>
+fn generate_edges<F>(
+    tgraph: &TGraph,
+    dont_preserve_node_mapping: bool,
+    progress: &mut ProgressMonitor<F>,
+) -> Result<Vec<CFLEdge>>
 where
     F: FnMut(ProgressEvent) -> Result<()>,
 {
     let out_indices = generate_out_indices(
         &tgraph.nodes,
         tgraph.cfl_push_pop_rules_count as usize,
+        dont_preserve_node_mapping,
         progress,
     )?;
     let mut edges =
@@ -163,7 +174,11 @@ where
     let mut progress_monitor = ProgressMonitor::new(progress);
     let transient_graph =
         convert_to_transient(sggraph, simplification_options, &mut progress_monitor)?;
-    let edges = generate_edges(&transient_graph, &mut progress_monitor)?;
+    let edges = generate_edges(
+        &transient_graph,
+        simplification_options.dont_preserve_node_mapping,
+        &mut progress_monitor,
+    )?;
     let metadata = generate_node_metadata(&transient_graph.nodes, &mut progress_monitor)?;
 
     let cfl_graph = CFLGraph {

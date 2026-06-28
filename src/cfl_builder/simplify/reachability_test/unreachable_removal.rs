@@ -112,21 +112,18 @@ where
     State: ReachabilityState,
     Walker: TGraphWalker,
 {
+    let state_ptr = state.as_mut_ptr();
     while let Some(current) = queue.pop() {
         let node = &tgraph.nodes[current as usize];
         let next = Walker::next_vertices(node);
-        let (left, right) = state.split_at_mut(current as usize);
-        let (local_state, right) = right.split_first_mut().unwrap();
+
+        let local_state = unsafe { &*state_ptr.add(current as usize) };
         for &target in next {
             if target == current {
                 continue;
             }
-            let target_state = if target < current {
-                &mut left[target as usize]
-            } else {
-                &mut right[(target - current - 1) as usize]
-            };
-            if target_state.merge_with(&local_state) {
+            let target_state = unsafe { &mut *state_ptr.add(target as usize) };
+            if target_state.merge_with(local_state) {
                 queue.push(target);
             }
         }

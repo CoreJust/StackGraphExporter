@@ -14,12 +14,6 @@ pub trait BitSet: Send + Clone {
     fn contains(&self, bit: u32) -> bool;
     #[allow(dead_code)]
     fn insert(&mut self, bit: u32);
-
-    fn unite_with_two(&mut self, a: &Self, b: &Self) -> bool {
-        let mut changed = self.unite_with(a);
-        changed |= self.unite_with(b);
-        changed
-    }
 }
 
 #[allow(dead_code)]
@@ -159,48 +153,11 @@ impl BitSetFixed {
 
         changed
     }
-
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx2")]
-    unsafe fn unite_with_two_avx2(dst: &mut [usize], a: &[usize], b: &[usize]) -> bool {
-        use core::arch::x86_64::*;
-        debug_assert_eq!(dst.len(), a.len());
-        debug_assert_eq!(a.len(), b.len());
-        let mut changed = false;
-        let mut i = 0;
-        let len = dst.len();
-        while i + 4 <= len {
-            let dst_vec = _mm256_loadu_si256(dst.as_ptr().add(i) as *const __m256i);
-            let a_vec = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
-            let b_vec = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
-            let combined = _mm256_or_si256(a_vec, b_vec);
-            let new_vec = _mm256_or_si256(dst_vec, combined);
-            _mm256_storeu_si256(dst.as_mut_ptr().add(i) as *mut __m256i, new_vec);
-            let diff = _mm256_xor_si256(dst_vec, new_vec);
-            if _mm256_testz_si256(diff, diff) == 0 {
-                changed = true;
-            }
-            i += 4;
-        }
-        while i < len {
-            let combined = a[i] | b[i];
-            let old = dst[i];
-            let new = old | combined;
-            if new != old {
-                dst[i] = new;
-                changed = true;
-            }
-            i += 1;
-        }
-        changed
-    }
 }
 
 type UnionFn = unsafe fn(&mut [usize], &[usize]) -> bool;
-type UnionTwoFn = unsafe fn(&mut [usize], &[usize], &[usize]) -> bool;
 
 static UNION_FN: OnceLock<UnionFn> = OnceLock::new();
-static UNION_TWO_FN: OnceLock<UnionTwoFn> = OnceLock::new();
 
 impl BitSet for BitSetFixed {
     fn empty(size: u32) -> Self {
@@ -244,36 +201,6 @@ impl BitSet for BitSetFixed {
 
     fn insert(&mut self, bit: u32) {
         self.data.insert(bit as usize);
-    }
-
-    fn unite_with_two(&mut self, other1: &Self, other2: &Self) -> bool {
-        assert!(self.data.len() == other1.data.len() && self.data.len() == other2.data.len());
-        let f = UNION_TWO_FN.get_or_init(|| {
-            #[cfg(target_arch = "x86_64")]
-            if std::is_x86_feature_detected!("avx2") {
-                return Self::unite_with_two_avx2 as UnionTwoFn;
-            }
-            (|dst: &mut [usize], a: &[usize], b: &[usize]| {
-                let mut changed = false;
-                for i in 0..dst.len() {
-                    let combined = a[i] | b[i];
-                    let old = dst[i];
-                    let new = old | combined;
-                    if new != old {
-                        dst[i] = new;
-                        changed = true;
-                    }
-                }
-                changed
-            }) as UnionTwoFn
-        });
-        unsafe {
-            f(
-                self.data.as_mut_slice(),
-                other1.data.as_slice(),
-                other2.data.as_slice(),
-            )
-        }
     }
 }
 

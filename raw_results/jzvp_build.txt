@@ -1,0 +1,33 @@
+> cargo run -r -- open ..\sources\JiaoZiVideoPlayer\app\src\main\java\cn\jzvd\demo\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `target\release\stackgraph_exporter.exe open ..\sources\JiaoZiVideoPlayer\app\src\main\java\cn\jzvd\demo\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps`
+[00:00:00] [########################################] 100% [382ms] Stack graph built successfully
+success: Loaded project at ..\sources\JiaoZiVideoPlayer\app\src\main\java\cn\jzvd\demo\
+[00:00:00] [########################################] 100% [60ms] SGGraph built successfully
+[00:00:00] [########################################] 100% [80ms] Database built successfully
+info: Peak memory usage when building partial paths database: 35 MB (36892828 bytes)
+[00:00:00] [########################################] 100% [10ms] Indexed nodes at partial path start
+info: Generated SG graph size: 53226 vertices, 44108 edges; 6986 symbols
+[00:00:00] [#############################>----------] 74% [49ms] [9984/13698] Simplifying transient graph (iteration 8): Removing unreachable nodes
+info: Transient simplification stats:
+	Iterations: 19
+	Total removed: 46171 nodes, 10397 edges, and 468 rules
+	Invalid pairs removed: 0
+	Invalid end nodes removed: 10782
+	Eps removed: 31405 (over 1 iterations in total)
+	Weak components purged: 175 (798 nodes)
+	Unreachable nodes removed: 4882
+info: Total stage time: simplify_by_removing_unreachable = 10ms
+info: Total stage time: remove_invalid_end_nodes = 0ms
+info: Total stage time: remove_weak_components_without_paths = 0ms
+info: Total stage time: remove_invalid_pairs = 0ms
+info: Total stage time: remove_all_eps_nodes = 32ms
+info: Total stage time: reindex_graph = 1ms
+info: Total stage time: reindex_graph_rules = 0ms
+[00:00:00] [########################################] 100% [70ms] Transient graph built successfully
+[00:00:00] [########################################] 100% [73ms] CFL graph built successfully
+info: Generated CFL graph size: 7116 vertices, 27721 edges (of which 27460 have symbols and 261 don't); 577 rules
+success: Generated GCfg at .\cfl.cfg.g
+success: Generated CnfCfg at .\cfl_grammar.cfg.cnf
+success: Generated all enabled artifacts
+info: Peak memory usage is 84.69176 MB (or 88805741 bytes)

@@ -1,0 +1,34 @@
+> cargo run -r -- open ..\sources\libgdx\gdx\src\com\badlogic\gdx\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps
+   Compiling stackgraph_exporter v0.1.0 (C:\Users\egor2\Desktop\Доки_для_ВУЗа\Thesis\tree-sitter\sg_extractor)
+    Finished `release` profile [optimized] target(s) in 4.08s
+     Running `target\release\stackgraph_exporter.exe open ..\sources\libgdx\gdx\src\com\badlogic\gdx\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps`
+[00:00:10] [########################################] 100% [10424ms] Stack graph built successfully
+success: Loaded project at ..\sources\libgdx\gdx\src\com\badlogic\gdx\
+[00:00:03] [########################################] 100% [3576ms] SGGraph built successfully
+[00:00:10] [########################################] 100% [8946ms] Database built successfully
+info: Peak memory usage when building partial paths database: 2473 MB (2593845740 bytes)
+[00:00:01] [########################################] 100% [1096ms] Indexed nodes at partial path start
+info: Generated SG graph size: 2448395 vertices, 2168813 edges; 293282 symbols
+[00:00:39] [#>--------------------------------------] 3% [39761ms] [23400/665811] Simplifying transient graph (iteration 22): Recalculating rule indices for nodes
+info: Transient simplification stats:
+	Iterations: 22
+	Total removed: 1782584 nodes, 18446744073709529543 edges, and 3450 rules
+	Invalid pairs removed: 0
+	Invalid end nodes removed: 276487
+	Eps removed: 1338791 (over 1 iterations in total)
+	Weak components purged: 11467 (40135 nodes)
+	Unreachable nodes removed: 38295
+info: Total stage time: remove_all_eps_nodes = 12618ms
+info: Total stage time: reindex_graph = 653ms
+info: Total stage time: simplify_by_removing_unreachable = 24882ms
+info: Total stage time: remove_weak_components_without_paths = 867ms
+info: Total stage time: remove_invalid_end_nodes = 80ms
+info: Total stage time: reindex_graph_rules = 77ms
+info: Total stage time: remove_invalid_pairs = 291ms
+[00:00:39] [########################################] 100% [39778ms] Transient graph built successfully
+[00:00:00] [########################################] 100% [39968ms] CFL graph built successfully
+info: Generated CFL graph size: 667839 vertices, 2168207 edges (of which 2137748 have symbols and 30459 don't); 16261 rules
+success: Generated GCfg at .\cfl.cfg.g
+success: Generated CnfCfg at .\cfl_grammar.cfg.cnf
+success: Generated all enabled artifacts
+info: Peak memory usage is 12329.783 MB (or 12928714610 bytes)

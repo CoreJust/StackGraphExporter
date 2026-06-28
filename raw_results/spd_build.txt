@@ -1,0 +1,34 @@
+> cargo run -r -- open ..\sources\shattered-pixel-dungeon\core\src\main\java\com\shatteredpixel\shatteredpixeldungeon\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps
+   Compiling stackgraph_exporter v0.1.0 (C:\Users\egor2\Desktop\Доки_для_ВУЗа\Thesis\tree-sitter\sg_extractor)
+    Finished `release` profile [optimized] target(s) in 4.03s
+     Running `target\release\stackgraph_exporter.exe open ..\sources\shattered-pixel-dungeon\core\src\main\java\com\shatteredpixel\shatteredpixeldungeon\ --simplify --create --g-cfg --cnf-cfg --inverse --with-front --deps`
+[00:00:04] [########################################] 100% [4738ms] Stack graph built successfully
+success: Loaded project at ..\sources\shattered-pixel-dungeon\core\src\main\java\com\shatteredpixel\shatteredpixeldungeon\
+[00:00:01] [########################################] 100% [1498ms] SGGraph built successfully
+[00:00:03] [########################################] 100% [2876ms] Database built successfully
+info: Peak memory usage when building partial paths database: 649 MB (681287788 bytes)
+[00:00:00] [########################################] 100% [412ms] Indexed nodes at partial path start
+info: Generated SG graph size: 1132110 vertices, 963522 edges; 128226 symbols
+[00:00:31] [----------------------------------------] 0% [31209ms] [814/208582] Simplifying transient graph (iteration 23): Recalculating rule indices for nodes
+info: Transient simplification stats:
+	Iterations: 23
+	Total removed: 923528 nodes, 18446744073709141431 edges, and 2336 rules
+	Invalid pairs removed: 0
+	Invalid end nodes removed: 167865
+	Eps removed: 653428 (over 1 iterations in total)
+	Weak components purged: 9913 (44151 nodes)
+	Unreachable nodes removed: 38717
+info: Total stage time: remove_weak_components_without_paths = 478ms
+info: Total stage time: remove_invalid_pairs = 137ms
+info: Total stage time: reindex_graph_rules = 38ms
+info: Total stage time: remove_all_eps_nodes = 22724ms
+info: Total stage time: reindex_graph = 294ms
+info: Total stage time: simplify_by_removing_unreachable = 8037ms
+info: Total stage time: remove_invalid_end_nodes = 43ms
+[00:00:31] [########################################] 100% [31219ms] Transient graph built successfully
+[00:00:00] [########################################] 100% [31286ms] CFL graph built successfully
+info: Generated CFL graph size: 209168 vertices, 1330984 edges (of which 1326050 have symbols and 4934 don't); 7689 rules
+success: Generated GCfg at .\cfl.cfg.g
+success: Generated CnfCfg at .\cfl_grammar.cfg.cnf
+success: Generated all enabled artifacts
+info: Peak memory usage is 5042.981 MB (or 5287948844 bytes)
